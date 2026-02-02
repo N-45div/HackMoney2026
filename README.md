@@ -59,26 +59,6 @@ End-to-end flow:
 7. Uniswap v4 hook executes swap with hidden order size
 8. Funds arrive, credit line restored, ENS records updated
 
-## Repository Structure
-
-```
-HackMoney2026/
-├── ARCHITECTURE.md         # Mermaid diagrams
-├── contracts/
-│   ├── arc-credit/
-│   │   └── ArcCreditTerminal.sol
-│   └── uniswap-hook/
-│       └── AntiSniperHook.sol
-├── backend/
-│   ├── yellow-agent/
-│   │   └── marginMonitor.ts
-│   └── cctp-bridge/
-│       └── crossChainTransfer.ts
-├── frontend/
-│   └── nextjs-app/
-└── README.md
-```
-
 ## Testnet Configuration
 
 | Component | Network | Chain ID | Status |
@@ -88,14 +68,6 @@ HackMoney2026/
 | Uniswap v4 | Arc Testnet | 5042002 | Deployable |
 | CCTP | Sepolia ↔ Arc | 11155111 ↔ 5042002 | Active |
 | ENS | Sepolia | 11155111 | Available |
-
-## Implementation Roadmap
-
-**Day 1-2**: Deploy ArcCreditTerminal.sol, integrate Circle Gateway deposits
-**Day 3-4**: Yellow SDK setup, state channel sessions, margin monitoring agent
-**Day 5**: Deploy Uniswap v4 PoolManager and AntiSniperHook to Arc Testnet
-**Day 6**: Next.js frontend, ENS text record integration
-**Day 7**: Demo video, testnet transactions, submission
 
 ## Key Contracts
 
