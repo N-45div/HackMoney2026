@@ -1,67 +1,119 @@
 # NitroBridge Vault
 
-NitroBridge Vault is a HackMoney 2026 build that fuses Arc/Circle infrastructure, Yellow Nitrolite sessions, Uniswap v4 hooks, and ENS-driven credit policies to deliver instant margin refills for cross-chain treasuries.
+**HackMoney 2026 Submission**
 
-This repository is structured as a workspace that will eventually host:
-- smart contracts for Arc (credit line) and Uniswap v4 (stealth top-up hook)
-- a backend orchestrator that talks to Yellow SDK, monitors borrower health, and drives Circle Bridge Kit flows
-- a frontend console for operators and borrowers (coming later)
+> Revolving credit line with instant cross-chain margin refills via state channels and privacy hooks
 
-## Problem Statement
-Treasury teams that extend revolving credit across multiple EVM chains are stuck with:
+## Product Overview
 
-1. **Slow approvals** – human-in-the-loop bridging every top-up exposes traders to liquidation risk.
-2. **MEV leakage** – sourcing liquidity on-chain reveals order size and timing.
-3. **Compliance debt** – risk/compliance teams can’t audit why or how credit was extended.
+Arc Credit Terminal enables traders to deposit USDC into an Arc smart contract and access a revolving credit line. When margin is low, a Yellow-authorized agent auto-approves instant top-ups through state channels, while Uniswap v4 privacy hooks hide order execution details from MEV bots.
 
-NitroBridge Vault solves this by:
+## System Architecture
 
-- capturing credit policies in ENS TXT records (human-readable + cryptographic anchor),
-- securing borrower approvals inside Yellow Nitrolite sessions so commitments are instant but private,
-- executing stealth top-ups via a Uniswap v4 hook (commit–reveal TWAP), and
-- settling funds on Arc testnet via Circle Bridge Kit directly into an Arc credit contract that emits ENS-tagged attestations.
+### Layer 1: User Interface
+The frontend is built with Next.js and provides three core interfaces:
+- **Credit Dashboard**: View available credit, current debt, and repayment history
+- **Margin Top-up UI**: Request instant margin refills with real-time status
+- **ENS Profile Management**: Link borrower.eth domain and view credit reputation
 
-## Architecture Overview
+### Layer 2: Smart Contracts (Arc Testnet)
+**ArcCreditTerminal.sol** manages the core credit logic:
+- `depositToCreditLine()`: Accepts USDC deposits via Circle Gateway, mints credit tokens
+- `requestMarginTopUp()`: Triggered when margin falls below threshold
+- `receiveCCTP()`: Handles USDC received from Ethereum Sepolia via Circle CCTP
+- `settleCredit()`: Processes repayments from trading profits
+
+**AntiSniperHook.sol** (Uniswap v4 on Arc Testnet):
+- Implements commit-reveal scheme to hide order sizes
+- `beforeSwap()`: Records encrypted commitment of trade details
+- `afterSwap()`: Reveals actual execution, prevents MEV frontrunning
+
+### Layer 3: Integration Layer
+**Yellow Nitrolite SDK**:
+- Opens state channel sessions between trader and authorized agent
+- Enables instant off-chain transfers (sub-second, zero gas)
+- Settles final balances on Arc testnet
+
+**Circle CCTP**:
+- Bridges USDC from Ethereum Sepolia to Arc Testnet
+- Burn-and-mint mechanism ensures native USDC on destination
+- Contracts: Message Transmitter (0x8FE6B...2DAA), Token Messenger (0xb43db...cF192)
+
+**Circle Gateway**:
+- Unified USDC balance across chains
+- Instant transfers with next-block finality
+
+**ENS (Sepolia Testnet)**:
+- Text records store credit scores and policies
+- `vnd.credit-score`: JSON with score, history, limits
+- `vnd.credit-policy`: Risk parameters and approval rules
+
+### Layer 4: Cross-Chain Execution
+End-to-end flow:
+1. Trader deposits 10,000 USDC into Arc Credit Terminal
+2. Receives 10,000 credit tokens as revolving line
+3. Opens Yellow state channel with 1,000 USDC allowance
+4. Agent monitors margin via WebSocket connection
+5. When margin drops to 200, instant off-chain top-up (800 USDC)
+6. CCTP bridges 5,000 USDC from Ethereum Sepolia
+7. Uniswap v4 hook executes swap with hidden order size
+8. Funds arrive, credit line restored, ENS records updated
+
+## Repository Structure
 
 ```
-Borrower ENS Profile ─┐
-                      │ ENS text records (risk params, policy hash)
-Yellow Session Client ┼─> Session approvals / allowances (Nitrolite Canary)
-                      │
-Backend Agent         ├─> Watches ENS + Arc credit state, triggers rebalances
-    ↳ Uniswap v4 Hook ─ execute stealth swaps on Base/Sepolia pools
-    ↳ Circle Bridge Kit ─ bridge USDC → Arc testnet + call credit contract
-Arc Credit Contract ──┘ emits events with ENS policy hash + new debt snapshot
-```
-
-## Repo Layout
-
-```
-arc-credit-terminal/
+HackMoney2026/
+├── ARCHITECTURE.md         # Mermaid diagrams
 ├── contracts/
-│   ├── arc-credit/         # Foundry project for Arc credit manager
-│   └── uniswap-hook/       # Foundry project for StealthTopUpHook
-├── backend/                # Node/TS orchestrator (Yellow + Circle + ENS)
+│   ├── arc-credit/
+│   │   └── ArcCreditTerminal.sol
+│   └── uniswap-hook/
+│       └── AntiSniperHook.sol
+├── backend/
+│   ├── yellow-agent/
+│   │   └── marginMonitor.ts
+│   └── cctp-bridge/
+│       └── crossChainTransfer.ts
+├── frontend/
+│   └── nextjs-app/
 └── README.md
 ```
 
-## Current Status
-- ✅ Git + remote established: https://github.com/N-45div/NitroBridge-Vault
-- ✅ Arc credit contract skeleton (`ArcCredit.sol`) with ENS-hash tagging and Bridge Kit events
-- ✅ Backend workspace + dependency install (Yellow SDK 1.0.7, ENSJS, ethers, viem)
-- 🚧 Uniswap v4 hook + backend orchestration + frontend console
+## Testnet Configuration
 
-## Roadmap
-1. **Backend agent**: implement ENS policy fetch, Yellow session bootstrap, Circle Bridge Kit handler, health monitor loop.
-2. **Uniswap hook**: Foundry project with commit–reveal TWAP + tests targeting Base Sepolia.
-3. **Frontend**: Next.js console for borrowers/operators (ENS settings, session approvals, debt dashboard).
-4. **Docs & Demo**: architecture diagram, testnet instructions, video script.
+| Component | Network | Chain ID | Status |
+|-----------|---------|----------|--------|
+| Arc | Testnet | 5042002 | Live |
+| Yellow | Sandbox | - | Available |
+| Uniswap v4 | Arc Testnet | 5042002 | Deployable |
+| CCTP | Sepolia ↔ Arc | 11155111 ↔ 5042002 | Active |
+| ENS | Sepolia | 11155111 | Available |
 
-## Testnet Targets
-- **Yellow**: Canary testnet for Nitrolite sessions.
-- **Uniswap v4**: Base / Sepolia testnet pools using the v4 template.
-- **Arc / Circle**: Arc public testnet + Bridge Kit sample (CCTP path from Base Sepolia).
-- **ENS**: Sepolia ENS deployment for TXT/content-hash writes.
+## Implementation Roadmap
 
-## Contribution
-This repo is currently single-maintainer (hacking solo). Please open issues for questions or potential collabs aligned with HackMoney sponsor tracks.
+**Day 1-2**: Deploy ArcCreditTerminal.sol, integrate Circle Gateway deposits
+**Day 3-4**: Yellow SDK setup, state channel sessions, margin monitoring agent
+**Day 5**: Deploy Uniswap v4 PoolManager and AntiSniperHook to Arc Testnet
+**Day 6**: Next.js frontend, ENS text record integration
+**Day 7**: Demo video, testnet transactions, submission
+
+## Key Contracts
+
+**Arc Testnet**:
+- CCTP Message Transmitter: `0x8FE6B999Dc680CcFDD5Bf7EB0974218be2542DAA`
+- CCTP Token Messenger: `0xb43db544E2c27092c107639Ad201b3dEfAbcF192`
+- Circle Gateway: `0x0077777d7EBA4688BDeF3E311b846F25870A19B9`
+
+**Yellow**:
+- Sandbox Endpoint: `wss://clearnet-sandbox.yellow.com/ws`
+
+**ENS**:
+- Sepolia Registry: Standard ENS testnet deployment
+
+## Documentation
+
+For detailed architecture diagrams, see ARCHITECTURE.md
+
+---
+
+Built for HackMoney 2026
