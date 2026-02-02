@@ -8,6 +8,25 @@
 
 NitroBridge Vault enables traders to deposit USDC into an Arc smart contract and access a revolving credit line. When margin is low, a Yellow-authorized agent auto-approves instant top-ups through state channels, while Uniswap v4 privacy hooks hide order execution details from MEV bots.
 
+## Problem We Solve
+
+**Current State:** Traders with capital scattered across multiple chains face a brutal dilemma when margin runs low:
+
+1. **Liquidation Risk** – Traditional bridging takes 5-15 minutes. By the time funds arrive, positions are already liquidated.
+
+2. **MEV Extraction** – Publicly requesting liquidity signals the market. Bots frontrun your refill, making it more expensive.
+
+3. **Credit Blindness** – On-chain protocols have no memory. A trader with perfect repayment history gets treated the same as a first-time borrower.
+
+4. **Chain Fragmentation** – Your USDC is on Ethereum, but you need it on Arc *right now*. Moving it requires bridging, swapping, gas in multiple currencies.
+
+**NitroBridge Vault fixes this:**
+
+- **Instant Top-ups** via Yellow state channels – sub-second, zero gas, pre-authorized by your credit policy
+- **Hidden Execution** via Uniswap v4 hooks – your order size stays private until execution, no MEV leakage
+- **Portable Reputation** via ENS – your credit score travels with your .eth name across any protocol
+- **Seamless Liquidity** via Circle CCTP – native USDC bridges from Ethereum to Arc in minutes, settled directly into your credit line
+
 ## System Architecture
 
 ### Layer 1: User Interface
