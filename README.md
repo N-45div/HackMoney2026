@@ -6,7 +6,7 @@
 
 ## Product Overview
 
-Arc Credit Terminal enables traders to deposit USDC into an Arc smart contract and access a revolving credit line. When margin is low, a Yellow-authorized agent auto-approves instant top-ups through state channels, while Uniswap v4 privacy hooks hide order execution details from MEV bots.
+NitroBridge Vault enables traders to deposit USDC into an Arc smart contract and access a revolving credit line. When margin is low, a Yellow-authorized agent auto-approves instant top-ups through state channels, while Uniswap v4 privacy hooks hide order execution details from MEV bots.
 
 ## System Architecture
 
