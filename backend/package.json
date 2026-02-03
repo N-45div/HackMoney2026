@@ -1,18 +1,22 @@
 {
-  "name": "backend",
+  "name": "nitrobridge-vault-backend",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "description": "Yellow Nitrolite agent + Circle CCTP bridge for NitroBridge Vault",
+  "type": "module",
+  "main": "marginMonitor.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start": "node marginMonitor.js",
+    "bridge": "node cctpBridge.js",
+    "test": "echo \"No tests yet\" && exit 0"
   },
-  "keywords": [],
+  "keywords": ["yellow", "nitrolite", "cctp", "arc"],
   "author": "",
-  "license": "ISC",
+  "license": "MIT",
   "dependencies": {
     "@erc7824/nitrolite": "^0.5.3",
     "dotenv": "^17.2.3",
     "ethers": "^6.16.0",
-    "viem": "^2.45.1"
+    "viem": "^2.45.1",
+    "ws": "^8.18.0"
   }
 }
