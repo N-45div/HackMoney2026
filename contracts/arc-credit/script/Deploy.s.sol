@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.19;
+pragma solidity ^0.8.20;
 
 import {Script, console} from "forge-std/Script.sol";
 import {ArcCreditTerminal} from "../src/ArcCreditTerminal.sol";
 
 contract DeployArcCreditTerminal is Script {
     // Arc Testnet USDC contract address
-    address constant ARC_TESTNET_USDC = 0x2e6a65532ED4F097Dd3703b22B7b5cF2F53cF9e6;
+    address constant ARC_TESTNET_USDC = 0x2e6A65532Ed4f097Dd3703B22b7b5cf2f53Cf9E6;
     
     function run() external returns (ArcCreditTerminal) {
         uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");

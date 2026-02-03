@@ -2,10 +2,10 @@
 src = "src"
 out = "out"
 libs = ["lib"]
-solc = "0.8.19"
+solc = "0.8.20"
 
 [rpc_endpoints]
-arctestnet = "https://rpc-arc.testnet.circle.com"
+arctestnet = "https://rpc.testnet.arc.network"
 
 [etherscan]
 arctestnet = { key = "", url = "https://testnet.arcscan.app/api" }
