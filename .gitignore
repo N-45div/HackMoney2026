@@ -1,1 +1,30 @@
-node_modules
+# Dependencies
+node_modules/
+
+# Foundry
+contracts/*/lib/
+contracts/*/out/
+contracts/*/cache/
+contracts/*/.gitmodules
+
+# Environment
+.env
+.env.local
+
+# Build artifacts
+dist/
+build/
+.next/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
