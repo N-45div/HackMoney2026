@@ -1,8 +1,8 @@
 'use client'
 
 import { useState } from 'react'
-import { parseUnits, createPublicClient, createWalletClient, http, custom } from 'viem'
-import { arcTestnet, CONTRACTS, ARC_CREDIT_TERMINAL_ABI, ERC20_ABI } from '../lib/contracts'
+import { parseUnits, createPublicClient, createWalletClient, http, custom, zeroHash } from 'viem'
+import { arcTestnet, CONTRACTS, ARC_CREDIT_TERMINAL_ABI, ERC20_ABI, DEPLOYMENT_TX } from '../lib/contracts'
 
 interface MarginTopUpProps {
   address: string
@@ -55,13 +55,14 @@ export default function MarginTopUp({ address }: MarginTopUpProps) {
       // Wait for approval
       await publicClient.waitForTransactionReceipt({ hash: approveHash })
       
-      // Step 2: Deposit to credit terminal
+      // Step 2: Deposit to credit terminal using depositToCreditLine(amount, ensHash)
+      // ensHash is bytes32 - using zeroHash for now (no ENS policy)
       setStatus('depositing')
       const depositHash = await walletClient.writeContract({
         address: CONTRACTS.ARC_CREDIT_TERMINAL,
         abi: ARC_CREDIT_TERMINAL_ABI,
-        functionName: 'deposit',
-        args: [depositAmount],
+        functionName: 'depositToCreditLine',
+        args: [depositAmount, zeroHash],
         account,
       })
       
@@ -168,7 +169,14 @@ export default function MarginTopUp({ address }: MarginTopUpProps) {
         )}
 
         <div className="text-center text-gray-500 text-sm">
-          <p>Contract: {CONTRACTS.ARC_CREDIT_TERMINAL.slice(0, 10)}...{CONTRACTS.ARC_CREDIT_TERMINAL.slice(-8)}</p>
+          <a 
+            href={DEPLOYMENT_TX.ARC_CREDIT_TERMINAL}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="hover:text-blue-400 transition"
+          >
+            Contract: {CONTRACTS.ARC_CREDIT_TERMINAL.slice(0, 10)}...{CONTRACTS.ARC_CREDIT_TERMINAL.slice(-8)} ↗
+          </a>
           <p className="mt-1">Network: Arc Testnet (5042002)</p>
         </div>
       </div>

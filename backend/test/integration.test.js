@@ -18,14 +18,18 @@ const CONTRACTS = {
 };
 
 const ARC_RPC_URL = 'https://rpc.testnet.arc.network';
-const SEPOLIA_RPC_URL = 'https://rpc.sepolia.org';
+const SEPOLIA_RPC_URL = 'https://eth-sepolia.g.alchemy.com/v2/EUzH12ECchHI0CKgwTdMZrvGZm4GKCLb';
 
-// Minimal ABIs for testing
+// Minimal ABIs for testing (matching actual deployed contract)
 const CREDIT_TERMINAL_ABI = [
-  'function creditLines(address) view returns (uint256 limit, uint256 borrowed, uint256 lastActivity)',
+  'function getCreditInfo(address) view returns (tuple(uint256 deposited, uint256 borrowed, uint256 creditLimit, uint256 lastUpdate, bytes32 ensHash))',
+  'function getAvailableCredit(address) view returns (uint256)',
+  'function creditLines(address) view returns (uint256 deposited, uint256 borrowed, uint256 creditLimit, uint256 lastUpdate, bytes32 ensHash)',
   'function authorizedAgents(address) view returns (bool)',
   'function usdc() view returns (address)',
   'function owner() view returns (address)',
+  'function COLLATERAL_RATIO() view returns (uint256)',
+  'function LIQUIDATION_THRESHOLD() view returns (uint256)',
 ];
 
 const ERC20_ABI = [
@@ -83,9 +87,29 @@ describe('ArcCreditTerminal Contract', () => {
   });
 
   it('should read credit line for zero address (empty)', async () => {
-    const [limit, borrowed, lastActivity] = await creditTerminal.creditLines(ethers.ZeroAddress);
-    assert.strictEqual(limit, 0n, 'Zero address should have no credit limit');
+    const [deposited, borrowed, creditLimit, lastUpdate, ensHash] = await creditTerminal.creditLines(ethers.ZeroAddress);
+    assert.strictEqual(deposited, 0n, 'Zero address should have no deposits');
     assert.strictEqual(borrowed, 0n, 'Zero address should have no borrowed amount');
+    assert.strictEqual(creditLimit, 0n, 'Zero address should have no credit limit');
+    console.log(`  Credit line: deposited=${deposited}, borrowed=${borrowed}, limit=${creditLimit}`);
+  });
+
+  it('should read getCreditInfo for zero address', async () => {
+    const info = await creditTerminal.getCreditInfo(ethers.ZeroAddress);
+    assert.ok(info, 'Should return credit info struct');
+    console.log(`  getCreditInfo: deposited=${info.deposited}, borrowed=${info.borrowed}`);
+  });
+
+  it('should read getAvailableCredit for zero address', async () => {
+    const available = await creditTerminal.getAvailableCredit(ethers.ZeroAddress);
+    assert.strictEqual(available, 0n, 'Zero address should have no available credit');
+    console.log(`  Available credit: ${available}`);
+  });
+
+  it('should read COLLATERAL_RATIO constant', async () => {
+    const ratio = await creditTerminal.COLLATERAL_RATIO();
+    assert.strictEqual(ratio, 150n, 'Collateral ratio should be 150%');
+    console.log(`  COLLATERAL_RATIO: ${ratio}%`);
   });
 
   it('should check agent authorization', async () => {

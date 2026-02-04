@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { formatUnits, createPublicClient, http } from 'viem'
-import { arcTestnet, CONTRACTS, ARC_CREDIT_TERMINAL_ABI } from '../lib/contracts'
+import { arcTestnet, CONTRACTS, ARC_CREDIT_TERMINAL_ABI, DEPLOYMENT_TX } from '../lib/contracts'
 
 interface CreditDashboardProps {
   address: string
@@ -13,6 +13,7 @@ interface CreditInfo {
   borrowed: bigint
   creditLimit: bigint
   available: bigint
+  lastUpdate: bigint
 }
 
 // Create public client for Arc Testnet
@@ -34,32 +35,38 @@ export default function CreditDashboard({ address }: CreditDashboardProps) {
       setError(null)
       
       try {
-        // Fetch credit line from deployed contract
+        // Fetch credit line using getCreditInfo (returns full struct)
         const creditLine = await publicClient.readContract({
           address: CONTRACTS.ARC_CREDIT_TERMINAL,
           abi: ARC_CREDIT_TERMINAL_ABI,
-          functionName: 'creditLines',
+          functionName: 'getCreditInfo',
           args: [address as `0x${string}`],
-        }) as [bigint, bigint, bigint]
+        }) as { deposited: bigint; borrowed: bigint; creditLimit: bigint; lastUpdate: bigint; ensHash: `0x${string}` }
         
-        const [limit, borrowed] = creditLine
-        const available = limit > borrowed ? limit - borrowed : BigInt(0)
+        // Also fetch available credit
+        const available = await publicClient.readContract({
+          address: CONTRACTS.ARC_CREDIT_TERMINAL,
+          abi: ARC_CREDIT_TERMINAL_ABI,
+          functionName: 'getAvailableCredit',
+          args: [address as `0x${string}`],
+        }) as bigint
         
         setCreditInfo({
-          deposited: limit, // In this contract, limit equals total deposited
-          borrowed: borrowed,
-          creditLimit: limit,
+          deposited: creditLine.deposited,
+          borrowed: creditLine.borrowed,
+          creditLimit: creditLine.creditLimit,
           available: available,
+          lastUpdate: creditLine.lastUpdate,
         })
       } catch (err) {
         console.error('Failed to fetch credit info:', err)
         setError('Failed to load credit information')
-        // Fallback to demo data if contract call fails
         setCreditInfo({
           deposited: BigInt(0),
           borrowed: BigInt(0),
           creditLimit: BigInt(0),
           available: BigInt(0),
+          lastUpdate: BigInt(0),
         })
       } finally {
         setLoading(false)
@@ -96,7 +103,14 @@ export default function CreditDashboard({ address }: CreditDashboardProps) {
       )}
       
       <div className="bg-gray-800/50 rounded-lg p-2 mb-4 text-xs text-gray-500">
-        Contract: {CONTRACTS.ARC_CREDIT_TERMINAL.slice(0, 10)}...{CONTRACTS.ARC_CREDIT_TERMINAL.slice(-8)}
+        <a 
+          href={DEPLOYMENT_TX.ARC_CREDIT_TERMINAL}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="hover:text-blue-400 transition"
+        >
+          Contract: {CONTRACTS.ARC_CREDIT_TERMINAL.slice(0, 10)}...{CONTRACTS.ARC_CREDIT_TERMINAL.slice(-8)} ↗
+        </a>
       </div>
       
       <div className="space-y-6">
