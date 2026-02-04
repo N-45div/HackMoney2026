@@ -1,110 +1,347 @@
 # NitroBridge Vault
 
-**HackMoney 2026 Submission**
+> **Instant cross-chain margin refills with sub-second state channel settlements and MEV-protected execution**
 
-> Revolving credit line with instant cross-chain margin refills via state channels and privacy hooks
+## The Problem
 
-## Product Overview
+Traders with capital across multiple chains face catastrophic margin calls:
 
-NitroBridge Vault enables traders to deposit USDC into an Arc smart contract and access a revolving credit line. When margin is low, a Yellow-authorized agent auto-approves instant top-ups through state channels, while Uniswap v4 privacy hooks hide order execution details from MEV bots.
+| Pain Point | Current Reality | Impact |
+|------------|-----------------|--------|
+| **Bridge Latency** | 5-15 minute finality | Position liquidated before funds arrive |
+| **MEV Extraction** | Public refill signals | Bots frontrun, increasing costs 2-5% |
+| **Fragmented Liquidity** | USDC on wrong chain | Manual bridging, multiple gas tokens |
+| **No Credit Memory** | Every tx starts fresh | Perfect repayers treated like new users |
 
-## Problem We Solve
+**A $50,000 margin call with 5-minute bridge time = guaranteed liquidation.**
 
-**Current State:** Traders with capital scattered across multiple chains face a brutal dilemma when margin runs low:
+## The Solution
 
-1. **Liquidation Risk** – Traditional bridging takes 5-15 minutes. By the time funds arrive, positions are already liquidated.
+NitroBridge Vault combines three breakthrough technologies:
 
-2. **MEV Extraction** – Publicly requesting liquidity signals the market. Bots frontrun your refill, making it more expensive.
+```mermaid
+graph TB
+    subgraph "Integration Layer"
+        Y[Yellow Nitrolite<br/>State Channels<br/>⚡ <100ms, Zero gas]
+        C[Circle CCTP<br/>Native USDC Bridge<br/>🌉 Sepolia ↔ Arc]
+        U[Uniswap v4 Hooks<br/>Commit-Reveal<br/>🔒 MEV Protection]
+    end
+    
+    subgraph "Core Protocol"
+        ACT[ArcCreditTerminal<br/>Revolving Credit<br/>Agent-Authorized<br/>Auto-Refill]
+    end
+    
+    Y --> ACT
+    C --> ACT
+    U --> ACT
+```
 
-3. **Credit Blindness** – On-chain protocols have no memory. A trader with perfect repayment history gets treated the same as a first-time borrower.
+## Architecture Overview
 
-4. **Chain Fragmentation** – Your USDC is on Ethereum, but you need it on Arc *right now*. Moving it requires bridging, swapping, gas in multiple currencies.
+```mermaid
+graph TB
+    subgraph "Presentation Layer"
+        UI[Next.js + wagmi]
+        CD[Credit Dashboard]
+        MT[Margin Top-Up]
+        BM[Bridge Monitor]
+    end
+    
+    subgraph "Smart Contracts - Arc Testnet"
+        ACT[ArcCreditTerminal.sol<br/>0xd1835d13A9694F0E9329FfDE9b18936CE872aae5]
+        ASH[AntiSniperHook.sol<br/>Uniswap v4]
+    end
+    
+    subgraph "Backend Services"
+        MM[Margin Monitor Agent<br/>marginMonitor.js]
+        CB[CCTP Bridge Service<br/>cctpBridge.js]
+    end
+    
+    subgraph "External Protocols"
+        YN[Yellow ClearNode<br/>wss://clearnet-sandbox.yellow.com]
+        CCTP[Circle CCTP<br/>Sepolia ↔ Arc]
+        V4[Uniswap v4<br/>PoolManager]
+    end
+    
+    UI --> CD
+    UI --> MT
+    UI --> BM
+    CD --> ACT
+    MT --> MM
+    BM --> CB
+    MM --> YN
+    MM --> ACT
+    CB --> CCTP
+    ACT --> ASH
+    ASH --> V4
+```
 
-**NitroBridge Vault fixes this:**
+## Transaction Flow
 
-- **Instant Top-ups** via Yellow state channels – sub-second, zero gas, pre-authorized by your credit policy
-- **Hidden Execution** via Uniswap v4 hooks – your order size stays private until execution, no MEV leakage
-- **Portable Reputation** via ENS – your credit score travels with your .eth name across any protocol
-- **Seamless Liquidity** via Circle CCTP – native USDC bridges from Ethereum to Arc in minutes, settled directly into your credit line
+```mermaid
+sequenceDiagram
+    participant Trader
+    participant UI as Web App
+    participant ACT as ArcCreditTerminal
+    participant YN as Yellow Nitrolite
+    participant Agent as Margin Agent
+    participant CCTP as Circle CCTP
+    participant Hook as Uniswap v4 Hook
 
-## System Architecture
+    Trader->>UI: Deposit 10,000 USDC
+    UI->>ACT: deposit(10000)
+    ACT-->>Trader: Credit line opened
+    
+    Trader->>YN: Open state channel
+    YN-->>Trader: Session with 1,000 allowance
+    
+    Note over Trader,Agent: Trading activity (off-chain)
+    
+    Agent->>YN: Monitor margin level
+    YN-->>Agent: Margin = 200 (LOW!)
+    
+    Agent->>YN: Instant off-chain top-up
+    YN-->>Trader: +800 USDC (< 100ms, $0 gas)
+    
+    Agent->>CCTP: Bridge 5,000 USDC from Sepolia
+    CCTP->>ACT: Mint USDC on Arc
+    
+    ACT->>Hook: commit(orderHash)
+    Hook->>Hook: Hide order details
+    ACT->>Hook: reveal(amount, salt)
+    Hook-->>ACT: Execute swap (MEV-protected)
+    
+    ACT-->>Trader: Credit line restored
+```
 
-### Layer 1: User Interface
-The frontend is built with Next.js and provides three core interfaces:
-- **Credit Dashboard**: View available credit, current debt, and repayment history
-- **Margin Top-up UI**: Request instant margin refills with real-time status
-- **ENS Profile Management**: Link borrower.eth domain and view credit reputation
+## Smart Contract Architecture
 
-### Layer 2: Smart Contracts (Arc Testnet)
-**ArcCreditTerminal.sol** manages the core credit logic:
-- `depositToCreditLine()`: Accepts USDC deposits via Circle Gateway, mints credit tokens
-- `requestMarginTopUp()`: Triggered when margin falls below threshold
-- `receiveCCTP()`: Handles USDC received from Ethereum Sepolia via Circle CCTP
-- `settleCredit()`: Processes repayments from trading profits
+```mermaid
+classDiagram
+    class ArcCreditTerminal {
+        +IERC20 usdc
+        +mapping creditLines
+        +mapping authorizedAgents
+        +deposit(amount)
+        +borrow(amount)
+        +agentTopUp(user, amount)
+        +settleCredit(amount)
+        +receiveCCTP(amount, messageHash)
+    }
+    
+    class AntiSniperHook {
+        +mapping commitments
+        +uint256 commitDeadline
+        +commit(hash)
+        +reveal(amount, salt)
+        +beforeSwap(key, params)
+        +afterSwap(key, params, delta)
+    }
+    
+    class CreditLine {
+        +uint256 limit
+        +uint256 borrowed
+        +uint256 lastActivity
+    }
+    
+    ArcCreditTerminal --> CreditLine
+    ArcCreditTerminal --> AntiSniperHook
+```
 
-**AntiSniperHook.sol** (Uniswap v4 on Arc Testnet):
-- Implements commit-reveal scheme to hide order sizes
-- `beforeSwap()`: Records encrypted commitment of trade details
-- `afterSwap()`: Reveals actual execution, prevents MEV frontrunning
+## Yellow State Channel Flow
 
-### Layer 3: Integration Layer
-**Yellow Nitrolite SDK**:
-- Opens state channel sessions between trader and authorized agent
-- Enables instant off-chain transfers (sub-second, zero gas)
-- Settles final balances on Arc testnet
+```mermaid
+sequenceDiagram
+    participant Trader
+    participant ClearNode as Yellow ClearNode
+    participant Agent as Margin Agent
+    
+    Trader->>ClearNode: createAppSessionMessage()
+    ClearNode-->>Trader: Session opened
+    
+    Note over Trader,ClearNode: Off-chain state channel<br/>Trader: 1,000 USDC<br/>Agent Allowance: 1,000 USDC
+    
+    Agent->>ClearNode: Monitor margin
+    ClearNode-->>Agent: Margin low (200 USDC)
+    
+    Agent->>ClearNode: offChainTransfer(800)
+    ClearNode-->>Trader: +800 USDC (instant)
+    
+    Note over Trader,ClearNode: Updated state<br/>Trader: 1,800 USDC<br/>Agent Allowance: 200 USDC
+    
+    Trader->>ClearNode: settleOnChain()
+    ClearNode-->>Trader: Final balances on Arc
+```
 
-**Circle CCTP**:
-- Bridges USDC from Ethereum Sepolia to Arc Testnet
-- Burn-and-mint mechanism ensures native USDC on destination
-- Contracts: Message Transmitter (0x8FE6B...2DAA), Token Messenger (0xb43db...cF192)
+## Circle CCTP Bridge Flow
 
-**Circle Gateway**:
-- Unified USDC balance across chains
-- Instant transfers with next-block finality
+```mermaid
+sequenceDiagram
+    participant User
+    participant Sepolia as Ethereum Sepolia
+    participant Circle as Circle Attestation
+    participant Arc as Arc Testnet
+    
+    User->>Sepolia: approve(TokenMessenger, amount)
+    User->>Sepolia: depositForBurn(amount, domain=10, recipient)
+    Sepolia-->>Circle: MessageSent event
+    
+    loop Poll for attestation
+        User->>Circle: GET /attestations/{hash}
+        Circle-->>User: status: pending
+    end
+    
+    Circle-->>User: status: complete, attestation: 0x...
+    
+    User->>Arc: receiveMessage(message, attestation)
+    Arc-->>User: USDC minted on Arc
+```
 
-**ENS (Sepolia Testnet)**:
-- Text records store credit scores and policies
-- `vnd.credit-score`: JSON with score, history, limits
-- `vnd.credit-policy`: Risk parameters and approval rules
+## Component Integration
 
-### Layer 4: Cross-Chain Execution
-End-to-end flow:
-1. Trader deposits 10,000 USDC into Arc Credit Terminal
-2. Receives 10,000 credit tokens as revolving line
-3. Opens Yellow state channel with 1,000 USDC allowance
-4. Agent monitors margin via WebSocket connection
-5. When margin drops to 200, instant off-chain top-up (800 USDC)
-6. CCTP bridges 5,000 USDC from Ethereum Sepolia
-7. Uniswap v4 hook executes swap with hidden order size
-8. Funds arrive, credit line restored, ENS records updated
+```mermaid
+graph LR
+    subgraph "Arc Credit Terminal"
+        A[deposit]
+        B[borrow]
+        C[agentTopUp]
+        D[settleCredit]
+        E[receiveCCTP]
+    end
+    
+    subgraph "Yellow Integration"
+        F[createSession]
+        G[offChainTransfer]
+        H[settleOnChain]
+    end
+    
+    subgraph "Uniswap v4 Hook"
+        I[commit]
+        J[reveal]
+        K[beforeSwap]
+        L[afterSwap]
+    end
+    
+    subgraph "Circle CCTP"
+        M[depositForBurn]
+        N[fetchAttestation]
+        O[receiveMessage]
+    end
+    
+    A --> F
+    C --> G
+    G --> H
+    H --> E
+    E --> I
+    I --> J
+    J --> K
+    K --> L
+    D --> M
+    M --> N
+    N --> O
+    O --> E
+```
 
-## Testnet Configuration
+## Deployed Contracts
 
-| Component | Network | Chain ID | Status |
-|-----------|---------|----------|--------|
-| Arc | Testnet | 5042002 | Live |
-| Yellow | Sandbox | - | Available |
-| Uniswap v4 | Arc Testnet | 5042002 | Deployable |
-| CCTP | Sepolia ↔ Arc | 11155111 ↔ 5042002 | Active |
-| ENS | Sepolia | 11155111 | Available |
+| Contract | Network | Address | Tx Hash |
+|----------|---------|---------|---------|
+| **ArcCreditTerminal** | Arc Testnet | `0xd1835d13A9694F0E9329FfDE9b18936CE872aae5` | `0xf30bfc37a23013a8f68d2b5375f5f5b19ddc5934b889923d91ba91462b61970f` |
+| USDC | Arc Testnet | `0x3600000000000000000000000000000000000000` | Native |
+| TokenMessenger | Arc Testnet | `0xb43db544E2c27092c107639Ad201b3dEfAbcF192` | Circle |
+| MessageTransmitter | Arc Testnet | `0x8FE6B999Dc680CcFDD5Bf7EB0974218be2542DAA` | Circle |
 
-## Key Contracts
+## Project Structure
 
-**Arc Testnet**:
-- CCTP Message Transmitter: `0x8FE6B999Dc680CcFDD5Bf7EB0974218be2542DAA`
-- CCTP Token Messenger: `0xb43db544E2c27092c107639Ad201b3dEfAbcF192`
-- Circle Gateway: `0x0077777d7EBA4688BDeF3E311b846F25870A19B9`
+```
+HackMoney2026/
+├── contracts/
+│   ├── arc-credit/
+│   │   ├── src/
+│   │   │   └── ArcCreditTerminal.sol      # Core credit line logic
+│   │   ├── script/
+│   │   │   └── Deploy.s.sol               # Deployment script
+│   │   └── foundry.toml                   # Foundry config
+│   │
+│   └── uniswap-hook/
+│       ├── src/
+│       │   └── AntiSniperHook.sol         # MEV protection hook
+│       └── script/
+│           └── DeployHook.s.sol           # Hook deployment
+│
+├── backend/
+│   ├── marginMonitor.js                   # Yellow SDK integration
+│   ├── cctpBridge.js                      # Circle CCTP bridge
+│   └── package.json
+│
+├── frontend/
+│   ├── app/                               # Next.js app router
+│   ├── components/
+│   │   ├── CreditDashboard.tsx            # Credit line UI
+│   │   ├── MarginTopUp.tsx                # Top-up interface
+│   │   └── ConnectWallet.tsx              # Wallet connection
+│   └── package.json
+│
+└── README.md
+```
 
-**Yellow**:
-- Sandbox Endpoint: `wss://clearnet-sandbox.yellow.com/ws`
+## Quick Start
 
-**ENS**:
-- Sepolia Registry: Standard ENS testnet deployment
+```bash
+# 1. Clone repository
+git clone https://github.com/N-45div/HackMoney2026.git
+cd HackMoney2026
 
-## Documentation
+# 2. Install backend dependencies
+cd backend && npm install
 
-For detailed architecture diagrams, see ARCHITECTURE.md
+# 3. Configure environment
+cp .env.example .env
+# Edit .env with your private key
+
+# 4. Run margin monitor agent
+npm start
+
+# 5. In another terminal, start frontend
+cd ../frontend && npm install && npm run dev
+```
+
+## Environment Variables
+
+```bash
+# Required
+PRIVATE_KEY=0x...                    # Agent wallet private key
+ARC_RPC_URL=https://rpc.testnet.arc.network
+
+# Optional
+SEPOLIA_RPC_URL=https://rpc.sepolia.org
+YELLOW_WS_URL=wss://clearnet-sandbox.yellow.com/ws
+```
+
+## Network Configuration
+
+| Network | Chain ID | RPC URL | Explorer |
+|---------|----------|---------|----------|
+| Arc Testnet | 5042002 | `https://rpc.testnet.arc.network` | [Explorer](https://explorer.testnet.arc.network) |
+| Sepolia | 11155111 | `https://rpc.sepolia.org` | [Etherscan](https://sepolia.etherscan.io) |
+| Yellow Sandbox | - | `wss://clearnet-sandbox.yellow.com/ws` | - |
+
+## Technical Specifications
+
+- **Settlement Time**: < 100ms (Yellow state channel) / 30-60s (CCTP bridge)
+- **Gas Cost**: $0 for off-chain transfers / ~$0.04 for on-chain settlement
+- **Supported Assets**: USDC (native via Circle CCTP)
+- **Credit Limit**: Configurable per user (default: 100% of deposit)
+- **Collateral Ratio**: 100% (fully collateralized credit line)
+
+## Security Considerations
+
+1. **State Channel Security**: All off-chain states are cryptographically signed
+2. **CCTP Attestation**: Circle validates every cross-chain message
+3. **Commit-Reveal**: Order details hidden until execution
+4. **Agent Authorization**: Only whitelisted agents can trigger top-ups
+5. **Reentrancy Protection**: All contracts use OpenZeppelin's ReentrancyGuard
 
 ---
 
-Built for HackMoney 2026
+**NitroBridge Vault** — *Because your margin shouldn't wait for finality.*
