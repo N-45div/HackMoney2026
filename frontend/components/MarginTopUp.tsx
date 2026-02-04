@@ -1,28 +1,78 @@
 'use client'
 
 import { useState } from 'react'
+import { parseUnits, createPublicClient, createWalletClient, http, custom } from 'viem'
+import { arcTestnet, CONTRACTS, ARC_CREDIT_TERMINAL_ABI, ERC20_ABI } from '../lib/contracts'
 
 interface MarginTopUpProps {
   address: string
 }
 
+// Create public client for Arc Testnet
+const publicClient = createPublicClient({
+  chain: arcTestnet,
+  transport: http(),
+})
+
 export default function MarginTopUp({ address }: MarginTopUpProps) {
   const [amount, setAmount] = useState('')
   const [loading, setLoading] = useState(false)
-  const [status, setStatus] = useState<'idle' | 'processing' | 'success' | 'error'>('idle')
+  const [status, setStatus] = useState<'idle' | 'approving' | 'depositing' | 'success' | 'error'>('idle')
+  const [txHash, setTxHash] = useState<string | null>(null)
+  const [errorMsg, setErrorMsg] = useState<string | null>(null)
 
-  const handleTopUp = async () => {
+  const handleDeposit = async () => {
     if (!amount || parseFloat(amount) <= 0) return
+    if (typeof window === 'undefined' || !window.ethereum) {
+      setErrorMsg('Please connect a wallet')
+      setStatus('error')
+      return
+    }
     
     setLoading(true)
-    setStatus('processing')
+    setStatus('approving')
+    setErrorMsg(null)
+    setTxHash(null)
     
-    // Simulate Yellow state channel top-up
     try {
-      await new Promise(resolve => setTimeout(resolve, 2000))
+      const walletClient = createWalletClient({
+        chain: arcTestnet,
+        transport: custom(window.ethereum),
+      })
+      
+      const [account] = await walletClient.getAddresses()
+      const depositAmount = parseUnits(amount, 6) // USDC has 6 decimals
+      
+      // Step 1: Approve USDC spend
+      const approveHash = await walletClient.writeContract({
+        address: CONTRACTS.USDC,
+        abi: ERC20_ABI,
+        functionName: 'approve',
+        args: [CONTRACTS.ARC_CREDIT_TERMINAL, depositAmount],
+        account,
+      })
+      
+      // Wait for approval
+      await publicClient.waitForTransactionReceipt({ hash: approveHash })
+      
+      // Step 2: Deposit to credit terminal
+      setStatus('depositing')
+      const depositHash = await walletClient.writeContract({
+        address: CONTRACTS.ARC_CREDIT_TERMINAL,
+        abi: ARC_CREDIT_TERMINAL_ABI,
+        functionName: 'deposit',
+        args: [depositAmount],
+        account,
+      })
+      
+      setTxHash(depositHash)
+      await publicClient.waitForTransactionReceipt({ hash: depositHash })
+      
       setStatus('success')
       setAmount('')
-    } catch {
+    } catch (err) {
+      console.error('Deposit failed:', err)
+      setErrorMsg(err instanceof Error ? err.message : 'Transaction failed')
       setStatus('error')
     } finally {
       setLoading(false)
@@ -76,7 +126,7 @@ export default function MarginTopUp({ address }: MarginTopUpProps) {
         </div>
 
         <button
-          onClick={handleTopUp}
+          onClick={handleDeposit}
           disabled={loading || !amount}
           className={`w-full py-4 rounded-xl font-semibold transition ${
             loading || !amount
@@ -87,28 +137,39 @@ export default function MarginTopUp({ address }: MarginTopUpProps) {
           {loading ? (
             <span className="flex items-center justify-center gap-2">
               <span className="animate-spin">⏳</span>
-              Processing via Yellow...
+              {status === 'approving' ? 'Approving USDC...' : 'Depositing...'}
             </span>
           ) : (
-            'Request Instant Top-up'
+            'Deposit to Credit Line'
           )}
         </button>
 
         {status === 'success' && (
-          <div className="bg-green-500/10 border border-green-500/20 rounded-xl p-4 text-green-400 text-center">
-            ✅ Top-up successful! Funds added instantly via state channel.
+          <div className="bg-green-500/10 border border-green-500/20 rounded-xl p-4 text-green-400">
+            <p className="text-center mb-2">✅ Deposit successful!</p>
+            {txHash && (
+              <a 
+                href={`https://explorer.testnet.arc.network/tx/${txHash}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-xs text-green-300 hover:underline block text-center"
+              >
+                View on Explorer →
+              </a>
+            )}
           </div>
         )}
 
         {status === 'error' && (
           <div className="bg-red-500/10 border border-red-500/20 rounded-xl p-4 text-red-400 text-center">
-            ❌ Top-up failed. Please try again.
+            <p>❌ Transaction failed</p>
+            {errorMsg && <p className="text-xs mt-1 text-red-300">{errorMsg}</p>}
           </div>
         )}
 
         <div className="text-center text-gray-500 text-sm">
-          <p>Powered by Yellow Nitrolite SDK</p>
-          <p className="mt-1">Endpoint: wss://clearnet-sandbox.yellow.com/ws</p>
+          <p>Contract: {CONTRACTS.ARC_CREDIT_TERMINAL.slice(0, 10)}...{CONTRACTS.ARC_CREDIT_TERMINAL.slice(-8)}</p>
+          <p className="mt-1">Network: Arc Testnet (5042002)</p>
         </div>
       </div>
     </div>
