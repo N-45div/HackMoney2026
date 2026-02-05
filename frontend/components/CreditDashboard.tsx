@@ -1,22 +1,22 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { formatUnits, createPublicClient, http } from 'viem'
+import { motion } from 'framer-motion'
+import { createPublicClient, http, formatUnits } from 'viem'
+import { TrendingUp, TrendingDown, DollarSign, CreditCard, AlertTriangle, RefreshCw } from 'lucide-react'
 import { arcTestnet, CONTRACTS, ARC_CREDIT_TERMINAL_ABI, DEPLOYMENT_TX } from '../lib/contracts'
-
-interface CreditDashboardProps {
-  address: string
-}
 
 interface CreditInfo {
   deposited: bigint
   borrowed: bigint
   creditLimit: bigint
   available: bigint
-  lastUpdate: bigint
 }
 
-// Create public client for Arc Testnet
+interface CreditDashboardProps {
+  address: string
+}
+
 const publicClient = createPublicClient({
   chain: arcTestnet,
   transport: http(),
@@ -26,132 +26,169 @@ export default function CreditDashboard({ address }: CreditDashboardProps) {
   const [creditInfo, setCreditInfo] = useState<CreditInfo | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [refreshing, setRefreshing] = useState(false)
 
-  useEffect(() => {
-    async function fetchCreditInfo() {
-      if (!address) return
-      
-      setLoading(true)
-      setError(null)
-      
-      try {
-        // Fetch credit line using getCreditInfo (returns full struct)
-        const creditLine = await publicClient.readContract({
-          address: CONTRACTS.ARC_CREDIT_TERMINAL,
-          abi: ARC_CREDIT_TERMINAL_ABI,
-          functionName: 'getCreditInfo',
-          args: [address as `0x${string}`],
-        }) as { deposited: bigint; borrowed: bigint; creditLimit: bigint; lastUpdate: bigint; ensHash: `0x${string}` }
-        
-        // Also fetch available credit
-        const available = await publicClient.readContract({
-          address: CONTRACTS.ARC_CREDIT_TERMINAL,
-          abi: ARC_CREDIT_TERMINAL_ABI,
-          functionName: 'getAvailableCredit',
-          args: [address as `0x${string}`],
-        }) as bigint
-        
-        setCreditInfo({
-          deposited: creditLine.deposited,
-          borrowed: creditLine.borrowed,
-          creditLimit: creditLine.creditLimit,
-          available: available,
-          lastUpdate: creditLine.lastUpdate,
-        })
-      } catch (err) {
-        console.error('Failed to fetch credit info:', err)
-        setError('Failed to load credit information')
-        setCreditInfo({
-          deposited: BigInt(0),
-          borrowed: BigInt(0),
-          creditLimit: BigInt(0),
-          available: BigInt(0),
-          lastUpdate: BigInt(0),
-        })
-      } finally {
-        setLoading(false)
-      }
-    }
+  async function fetchCreditInfo() {
+    if (!address) return
     
-    fetchCreditInfo()
-  }, [address])
-
-  if (loading) {
-    return (
-      <div className="bg-gray-900 rounded-2xl p-6 border border-gray-800">
-        <h2 className="text-xl font-semibold mb-4">Credit Dashboard</h2>
-        <div className="animate-pulse space-y-4">
-          <div className="h-4 bg-gray-800 rounded w-3/4"></div>
-          <div className="h-4 bg-gray-800 rounded w-1/2"></div>
-        </div>
-      </div>
-    )
+    try {
+      const creditLine = await publicClient.readContract({
+        address: CONTRACTS.CREDIT_TERMINAL,
+        abi: ARC_CREDIT_TERMINAL_ABI,
+        functionName: 'getCreditInfo',
+        args: [address as `0x${string}`],
+      }) as { deposited: bigint; borrowed: bigint; creditLimit: bigint; lastUpdate: bigint; ensHash: `0x${string}` }
+      
+      const available = await publicClient.readContract({
+        address: CONTRACTS.CREDIT_TERMINAL,
+        abi: ARC_CREDIT_TERMINAL_ABI,
+        functionName: 'getAvailableCredit',
+        args: [address as `0x${string}`],
+      }) as bigint
+      
+      setCreditInfo({
+        deposited: creditLine.deposited,
+        borrowed: creditLine.borrowed,
+        creditLimit: creditLine.creditLimit,
+        available: available,
+      })
+      setError(null)
+    } catch (err) {
+      console.error('Error fetching credit info:', err)
+      setError('Failed to fetch credit info')
+    } finally {
+      setLoading(false)
+      setRefreshing(false)
+    }
   }
 
-  const utilizationRate = creditInfo && creditInfo.creditLimit > BigInt(0)
-    ? Number(creditInfo.borrowed) / Number(creditInfo.creditLimit) * 100 
+  useEffect(() => {
+    setLoading(true)
+    fetchCreditInfo()
+    const interval = setInterval(fetchCreditInfo, 30000)
+    return () => clearInterval(interval)
+  }, [address])
+
+  const handleRefresh = () => {
+    setRefreshing(true)
+    fetchCreditInfo()
+  }
+
+  const utilizationRate = creditInfo && creditInfo.creditLimit > 0n
+    ? Number((creditInfo.borrowed * 100n) / creditInfo.creditLimit)
     : 0
 
+  const healthStatus = utilizationRate > 80 ? 'danger' : utilizationRate > 50 ? 'warning' : 'healthy'
+
   return (
-    <div className="bg-gray-900 rounded-2xl p-6 border border-gray-800">
-      <h2 className="text-xl font-semibold mb-6">Credit Dashboard</h2>
-      
-      {error && (
-        <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-xl p-3 mb-4 text-yellow-400 text-sm">
-          {error} - Showing default values
+    <motion.div 
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="glass-card p-6"
+    >
+      <div className="flex items-center justify-between mb-6">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-cyan-500/20 to-blue-500/20 flex items-center justify-center">
+            <CreditCard className="w-5 h-5 text-cyan" />
+          </div>
+          <div>
+            <h2 className="font-semibold">Credit Dashboard</h2>
+            <p className="text-xs text-muted">Arc Testnet</p>
+          </div>
         </div>
-      )}
-      
-      <div className="bg-gray-800/50 rounded-lg p-2 mb-4 text-xs text-gray-500">
-        <a 
-          href={DEPLOYMENT_TX.ARC_CREDIT_TERMINAL}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="hover:text-blue-400 transition"
+        <button 
+          onClick={handleRefresh}
+          disabled={refreshing}
+          className="p-2 rounded-lg hover:bg-white/5 transition"
         >
-          Contract: {CONTRACTS.ARC_CREDIT_TERMINAL.slice(0, 10)}...{CONTRACTS.ARC_CREDIT_TERMINAL.slice(-8)} ↗
-        </a>
+          <RefreshCw className={`w-4 h-4 text-muted ${refreshing ? 'animate-spin' : ''}`} />
+        </button>
       </div>
-      
-      <div className="space-y-6">
-        <div className="grid grid-cols-2 gap-4">
-          <div className="bg-gray-800 rounded-xl p-4">
-            <p className="text-gray-400 text-sm">Deposited</p>
-            <p className="text-2xl font-bold text-green-400">
-              ${creditInfo ? formatUnits(creditInfo.deposited, 6) : '0'}
-            </p>
-          </div>
-          <div className="bg-gray-800 rounded-xl p-4">
-            <p className="text-gray-400 text-sm">Borrowed</p>
-            <p className="text-2xl font-bold text-orange-400">
-              ${creditInfo ? formatUnits(creditInfo.borrowed, 6) : '0'}
-            </p>
-          </div>
-        </div>
 
-        <div className="bg-gray-800 rounded-xl p-4">
-          <div className="flex justify-between mb-2">
-            <p className="text-gray-400 text-sm">Available Credit</p>
-            <p className="text-sm text-gray-400">{utilizationRate.toFixed(1)}% used</p>
-          </div>
-          <p className="text-3xl font-bold text-blue-400 mb-3">
-            ${creditInfo ? formatUnits(creditInfo.available, 6) : '0'}
-          </p>
-          <div className="w-full bg-gray-700 rounded-full h-2">
-            <div 
-              className="bg-gradient-to-r from-blue-500 to-purple-500 h-2 rounded-full transition-all"
-              style={{ width: `${utilizationRate}%` }}
-            ></div>
-          </div>
+      {loading && !creditInfo ? (
+        <div className="text-center py-12">
+          <div className="w-10 h-10 border-2 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+          <p className="text-sm text-muted">Loading credit info...</p>
         </div>
+      ) : error ? (
+        <div className="text-center py-12">
+          <AlertTriangle className="w-10 h-10 text-red mx-auto mb-4" />
+          <p className="text-sm text-red">{error}</p>
+        </div>
+      ) : (
+        <>
+          <div className="mb-6">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-sm text-secondary">Health Factor</span>
+              <span className={`text-sm font-semibold ${
+                healthStatus === 'danger' ? 'text-red' :
+                healthStatus === 'warning' ? 'text-yellow' : 'text-green'
+              }`}>
+                {utilizationRate}% Utilized
+              </span>
+            </div>
+            <div className="progress-bar">
+              <div 
+                className={`progress-fill ${
+                  healthStatus === 'danger' ? 'progress-danger' :
+                  healthStatus === 'warning' ? 'progress-warning' : 'progress-healthy'
+                }`}
+                style={{ width: `${Math.min(utilizationRate, 100)}%` }}
+              />
+            </div>
+          </div>
 
-        <div className="bg-gray-800 rounded-xl p-4">
-          <p className="text-gray-400 text-sm mb-1">Credit Limit</p>
-          <p className="text-xl font-semibold">
-            ${creditInfo ? formatUnits(creditInfo.creditLimit, 6) : '0'}
-          </p>
-        </div>
-      </div>
-    </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="metric-card">
+              <div className="flex items-center gap-2 mb-2">
+                <TrendingUp className="w-4 h-4 text-green" />
+                <span className="text-xs text-muted uppercase">Deposited</span>
+              </div>
+              <p className="metric-value text-green">
+                ${creditInfo ? parseFloat(formatUnits(creditInfo.deposited, 6)).toFixed(2) : '0.00'}
+              </p>
+            </div>
+            <div className="metric-card">
+              <div className="flex items-center gap-2 mb-2">
+                <TrendingDown className="w-4 h-4 text-orange" />
+                <span className="text-xs text-muted uppercase">Borrowed</span>
+              </div>
+              <p className="metric-value text-orange">
+                ${creditInfo ? parseFloat(formatUnits(creditInfo.borrowed, 6)).toFixed(2) : '0.00'}
+              </p>
+            </div>
+            <div className="metric-card ring-1 ring-cyan/30">
+              <div className="flex items-center gap-2 mb-2">
+                <DollarSign className="w-4 h-4 text-cyan" />
+                <span className="text-xs text-muted uppercase">Available</span>
+              </div>
+              <p className="metric-value text-cyan">
+                ${creditInfo ? parseFloat(formatUnits(creditInfo.available, 6)).toFixed(2) : '0.00'}
+              </p>
+            </div>
+            <div className="metric-card">
+              <div className="flex items-center gap-2 mb-2">
+                <CreditCard className="w-4 h-4 text-purple" />
+                <span className="text-xs text-muted uppercase">Limit</span>
+              </div>
+              <p className="metric-value text-purple">
+                ${creditInfo ? parseFloat(formatUnits(creditInfo.creditLimit, 6)).toFixed(2) : '0.00'}
+              </p>
+            </div>
+          </div>
+
+          <div className="mt-6 pt-4 border-t border-white/5">
+            <a 
+              href={DEPLOYMENT_TX.ARC_CREDIT_TERMINAL}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-xs text-muted hover:text-white transition"
+            >
+              Contract: {CONTRACTS.CREDIT_TERMINAL.slice(0, 10)}...{CONTRACTS.CREDIT_TERMINAL.slice(-8)} ↗
+            </a>
+          </div>
+        </>
+      )}
+    </motion.div>
   )
 }

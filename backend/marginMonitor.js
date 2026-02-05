@@ -1,7 +1,13 @@
 /**
  * NitroBridge Vault - Margin Monitor Agent
  * 
- * Real implementation using Yellow Network Nitrolite SDK for instant state channel transfers.
+ * Multi-chain margin monitoring with Yellow Network state channels for instant transfers.
+ * Architecture:
+ *   - Arc Testnet: Credit Terminal (liquidity hub)
+ *   - Base Sepolia: Uniswap v4 AntiSniperHook (MEV protection)
+ *   - Yellow Network: Instant off-chain state channel transfers
+ *   - Circle CCTP: Cross-chain USDC bridging
+ * 
  * Based on official Yellow Network documentation: https://docs.yellow.org/docs/build/quick-start/
  */
 
@@ -14,10 +20,45 @@ dotenv.config();
 
 // Arc Testnet Configuration (from https://docs.arc.network/arc/references/contract-addresses)
 const ARC_CONFIG = {
-  rpc: 'https://rpc.testnet.arc.network',
+  rpc: process.env.ARC_RPC_URL || 'https://rpc.testnet.arc.network',
   chainId: 5042002,
-  usdc: '0x3600000000000000000000000000000000000000', // Native USDC on Arc Testnet
-  explorer: 'https://testnet.arcscan.app'
+  usdc: '0x3600000000000000000000000000000000000000',
+  explorer: 'https://testnet.arcscan.app',
+  // CCTP contracts on Arc
+  cctp: {
+    tokenMessenger: '0xb43db544E2c27092c107639Ad201b3dEfAbcF192',
+    messageTransmitter: '0x8FE6B999Dc680CcFDD5Bf7EB0974218be2542DAA',
+    tokenMinter: '0xE737e5cEBEEBa77EFE34D4aa090756590b1CE275'
+  }
+};
+
+// Base Sepolia Configuration (Uniswap v4 deployed here)
+const BASE_SEPOLIA_CONFIG = {
+  rpc: process.env.BASE_SEPOLIA_RPC_URL || 'https://sepolia.base.org',
+  chainId: 84532,
+  usdc: '0x036CbD53842c5426634e7929541eC2318f3dCF7e', // USDC on Base Sepolia
+  explorer: 'https://sepolia.basescan.org',
+  // Uniswap v4 contracts
+  poolManager: '0x7Da1D65F8B249183667cdE74C5CBD46dD38AA829',
+  // CCTP contracts on Base Sepolia
+  cctp: {
+    tokenMessenger: '0x9f3B8679c73C2Fef8b59B4F3444d4e156fb70AA5',
+    messageTransmitter: '0x7865fAfC2db2093669d92c0f33AeEF291086BEFD'
+  },
+  cctpDomain: 6 // Base domain ID
+};
+
+// Ethereum Sepolia Configuration (CCTP source)
+const ETH_SEPOLIA_CONFIG = {
+  rpc: process.env.ETH_SEPOLIA_RPC_URL || 'https://rpc.sepolia.org',
+  chainId: 11155111,
+  usdc: '0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238',
+  explorer: 'https://sepolia.etherscan.io',
+  cctp: {
+    tokenMessenger: '0x9f3B8679c73C2Fef8b59B4F3444d4e156fb70AA5',
+    messageTransmitter: '0x7865fAfC2db2093669d92c0f33AeEF291086BEFD'
+  },
+  cctpDomain: 0 // Ethereum domain ID
 };
 
 // Yellow Network Configuration
@@ -337,4 +378,4 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   main();
 }
 
-export { MarginMonitorAgent, ARC_CONFIG, YELLOW_CONFIG };
+export { MarginMonitorAgent, ARC_CONFIG, BASE_SEPOLIA_CONFIG, ETH_SEPOLIA_CONFIG, YELLOW_CONFIG };
