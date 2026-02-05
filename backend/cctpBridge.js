@@ -1,12 +1,15 @@
 /**
  * NitroBridge Vault - Circle CCTP Bridge
  * 
- * Production implementation of Circle's Cross-Chain Transfer Protocol (CCTP)
- * for bridging USDC between Ethereum Sepolia and Arc Testnet.
+ * Multi-chain CCTP implementation for bridging USDC between:
+ *   - Ethereum Sepolia <-> Arc Testnet
+ *   - Ethereum Sepolia <-> Base Sepolia
+ *   - Base Sepolia <-> Arc Testnet
  * 
  * References:
  * - https://developers.circle.com/stablecoins/cctp-getting-started
  * - https://docs.arc.network/arc/references/contract-addresses
+ * - https://developers.circle.com/cctp/concepts/supported-chains-and-domains
  */
 
 import { ethers } from 'ethers';
@@ -15,6 +18,7 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 // CCTP Domain IDs (official from Circle documentation)
+// Source: https://developers.circle.com/cctp/concepts/supported-chains-and-domains
 const CCTP_DOMAINS = {
   ETHEREUM_MAINNET: 0,
   AVALANCHE_MAINNET: 1,
@@ -22,25 +26,43 @@ const CCTP_DOMAINS = {
   ARBITRUM_MAINNET: 3,
   BASE_MAINNET: 6,
   POLYGON_MAINNET: 7,
-  ETHEREUM_SEPOLIA: 0,  // Testnet uses same domain as mainnet
+  // Testnets use same domain IDs as mainnet
+  ETHEREUM_SEPOLIA: 0,
   AVALANCHE_FUJI: 1,
-  ARC_TESTNET: 10       // Arc testnet domain - verify from Circle docs
+  BASE_SEPOLIA: 6,
+  ARC_TESTNET: 10  // Arc testnet domain
 };
 
 // Contract Addresses - Verified from official documentation
 const CONTRACTS = {
-  // Ethereum Sepolia (from https://developers.circle.com/stablecoins/cctp-protocol-contract)
+  // Ethereum Sepolia
   sepolia: {
     usdc: '0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238',
     tokenMessenger: '0x9f3B8679c73C2Fef8b59B4F3444d4e156fb70AA5',
-    messageTransmitter: '0x7865fAfC2db2093669d92c0f33AeEF291086BEFD'
+    messageTransmitter: '0x7865fAfC2db2093669d92c0f33AeEF291086BEFD',
+    rpc: 'https://rpc.sepolia.org',
+    chainId: 11155111,
+    explorer: 'https://sepolia.etherscan.io'
   },
-  // Arc Testnet (from https://docs.arc.network/arc/references/contract-addresses)
+  // Base Sepolia (Uniswap v4 deployed here)
+  baseSepolia: {
+    usdc: '0x036CbD53842c5426634e7929541eC2318f3dCF7e',
+    tokenMessenger: '0x9f3B8679c73C2Fef8b59B4F3444d4e156fb70AA5',
+    messageTransmitter: '0x7865fAfC2db2093669d92c0f33AeEF291086BEFD',
+    rpc: 'https://sepolia.base.org',
+    chainId: 84532,
+    explorer: 'https://sepolia.basescan.org',
+    poolManager: '0x7Da1D65F8B249183667cdE74C5CBD46dD38AA829' // Uniswap v4
+  },
+  // Arc Testnet (Credit Terminal deployed here)
   arc: {
     usdc: '0x3600000000000000000000000000000000000000',
     tokenMessenger: '0xb43db544E2c27092c107639Ad201b3dEfAbcF192',
     messageTransmitter: '0x8FE6B999Dc680CcFDD5Bf7EB0974218be2542DAA',
-    tokenMinter: '0xE737e5cEBEEBa77EFE34D4aa090756590b1CE275'
+    tokenMinter: '0xE737e5cEBEEBa77EFE34D4aa090756590b1CE275',
+    rpc: 'https://rpc.testnet.arc.network',
+    chainId: 5042002,
+    explorer: 'https://testnet.arcscan.app'
   }
 };
 
