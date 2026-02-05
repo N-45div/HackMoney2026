@@ -1,14 +1,15 @@
 'use client'
 
 import { useState } from 'react'
+import { motion } from 'framer-motion'
 import { parseUnits, createPublicClient, createWalletClient, http, custom, zeroHash } from 'viem'
+import { Zap, ArrowUpRight, CheckCircle2, XCircle, Loader2 } from 'lucide-react'
 import { arcTestnet, CONTRACTS, ARC_CREDIT_TERMINAL_ABI, ERC20_ABI, DEPLOYMENT_TX } from '../lib/contracts'
 
 interface MarginTopUpProps {
   address: string
 }
 
-// Create public client for Arc Testnet
 const publicClient = createPublicClient({
   chain: arcTestnet,
   transport: http(),
@@ -41,25 +42,21 @@ export default function MarginTopUp({ address }: MarginTopUpProps) {
       })
       
       const [account] = await walletClient.getAddresses()
-      const depositAmount = parseUnits(amount, 6) // USDC has 6 decimals
+      const depositAmount = parseUnits(amount, 6)
       
-      // Step 1: Approve USDC spend
       const approveHash = await walletClient.writeContract({
         address: CONTRACTS.USDC,
         abi: ERC20_ABI,
         functionName: 'approve',
-        args: [CONTRACTS.ARC_CREDIT_TERMINAL, depositAmount],
+        args: [CONTRACTS.CREDIT_TERMINAL, depositAmount],
         account,
       })
       
-      // Wait for approval
       await publicClient.waitForTransactionReceipt({ hash: approveHash })
       
-      // Step 2: Deposit to credit terminal using depositToCreditLine(amount, ensHash)
-      // ensHash is bytes32 - using zeroHash for now (no ENS policy)
       setStatus('depositing')
       const depositHash = await walletClient.writeContract({
-        address: CONTRACTS.ARC_CREDIT_TERMINAL,
+        address: CONTRACTS.CREDIT_TERMINAL,
         abi: ARC_CREDIT_TERMINAL_ABI,
         functionName: 'depositToCreditLine',
         args: [depositAmount, zeroHash],
@@ -81,105 +78,147 @@ export default function MarginTopUp({ address }: MarginTopUpProps) {
   }
 
   return (
-    <div className="bg-gray-900 rounded-2xl p-6 border border-gray-800">
-      <h2 className="text-xl font-semibold mb-6">Instant Margin Top-up</h2>
-      
-      <div className="space-y-6">
-        <div className="bg-gradient-to-r from-yellow-500/10 to-orange-500/10 rounded-xl p-4 border border-yellow-500/20">
-          <div className="flex items-center gap-2 mb-2">
-            <span className="text-yellow-400">⚡</span>
-            <p className="text-yellow-400 font-medium">Yellow State Channel</p>
+    <motion.div 
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ delay: 0.1 }}
+      className="glass-card p-6"
+    >
+      <div className="flex items-center gap-3 mb-6">
+        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-yellow-500/20 to-orange-500/20 flex items-center justify-center">
+          <Zap className="w-5 h-5 text-yellow" />
+        </div>
+        <div>
+          <h2 className="font-semibold">Deposit USDC</h2>
+          <p className="text-xs text-muted">Instant margin via Yellow channels</p>
+        </div>
+      </div>
+
+      <div className="space-y-4">
+        {/* Yellow Network Badge */}
+        <div className="p-4 rounded-xl bg-gradient-to-r from-yellow-500/10 to-orange-500/5 border border-yellow-500/20">
+          <div className="flex items-center gap-2 mb-1">
+            <Zap className="w-4 h-4 text-yellow" />
+            <span className="text-sm font-medium text-yellow">Yellow State Channel Active</span>
           </div>
-          <p className="text-gray-400 text-sm">
-            Instant off-chain transfers, zero gas fees, pre-authorized by your credit policy
+          <p className="text-xs text-muted">
+            Sub-second transfers, zero gas for top-ups
           </p>
         </div>
 
+        {/* Amount Input */}
         <div>
-          <label className="block text-gray-400 text-sm mb-2">Amount (USDC)</label>
+          <label className="block text-sm text-secondary mb-2">Amount (USDC)</label>
           <div className="relative">
             <input
               type="number"
               value={amount}
               onChange={(e) => setAmount(e.target.value)}
               placeholder="0.00"
-              className="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 text-lg focus:outline-none focus:border-blue-500 transition"
+              className="input-field text-xl font-semibold pr-20"
             />
-            <button 
-              onClick={() => setAmount('1000')}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-blue-400 hover:text-blue-300"
-            >
-              MAX
-            </button>
+            <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-2">
+              <span className="text-sm text-muted">USDC</span>
+            </div>
           </div>
         </div>
 
-        <div className="grid grid-cols-3 gap-2">
-          {['100', '500', '1000'].map((val) => (
+        {/* Quick Amount Buttons */}
+        <div className="grid grid-cols-4 gap-2">
+          {['100', '500', '1000', '5000'].map((val) => (
             <button
               key={val}
               onClick={() => setAmount(val)}
-              className="bg-gray-800 hover:bg-gray-700 rounded-lg py-2 text-sm transition"
+              className={`py-2 rounded-lg text-sm font-medium transition ${
+                amount === val 
+                  ? 'bg-blue-500/20 text-blue border border-blue-500/30' 
+                  : 'bg-white/5 text-secondary hover:bg-white/10 border border-transparent'
+              }`}
             >
               ${val}
             </button>
           ))}
         </div>
 
-        <button
+        {/* Deposit Button */}
+        <motion.button
           onClick={handleDeposit}
           disabled={loading || !amount}
-          className={`w-full py-4 rounded-xl font-semibold transition ${
+          whileHover={{ scale: loading ? 1 : 1.01 }}
+          whileTap={{ scale: loading ? 1 : 0.99 }}
+          className={`w-full py-4 rounded-xl font-semibold transition flex items-center justify-center gap-2 ${
             loading || !amount
-              ? 'bg-gray-700 text-gray-500 cursor-not-allowed'
-              : 'bg-gradient-to-r from-blue-500 to-purple-500 hover:from-blue-600 hover:to-purple-600'
+              ? 'bg-white/5 text-muted cursor-not-allowed'
+              : 'btn-primary'
           }`}
         >
           {loading ? (
-            <span className="flex items-center justify-center gap-2">
-              <span className="animate-spin">⏳</span>
-              {status === 'approving' ? 'Approving USDC...' : 'Depositing...'}
-            </span>
+            <>
+              <Loader2 className="w-5 h-5 animate-spin" />
+              <span>{status === 'approving' ? 'Approving USDC...' : 'Depositing...'}</span>
+            </>
           ) : (
-            'Deposit to Credit Line'
+            <>
+              <span className="relative z-10">Deposit to Credit Line</span>
+              <ArrowUpRight className="w-4 h-4 relative z-10" />
+            </>
           )}
-        </button>
+        </motion.button>
 
+        {/* Success State */}
         {status === 'success' && (
-          <div className="bg-green-500/10 border border-green-500/20 rounded-xl p-4 text-green-400">
-            <p className="text-center mb-2">✅ Deposit successful!</p>
+          <motion.div 
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="p-4 rounded-xl bg-green/10 border border-green/20"
+          >
+            <div className="flex items-center gap-2 text-green mb-2">
+              <CheckCircle2 className="w-5 h-5" />
+              <span className="font-medium">Deposit Successful!</span>
+            </div>
             {txHash && (
               <a 
-                href={`https://explorer.testnet.arc.network/tx/${txHash}`}
+                href={`https://testnet.arcscan.app/tx/${txHash}`}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-xs text-green-300 hover:underline block text-center"
+                className="text-xs text-green/80 hover:text-green flex items-center gap-1"
               >
-                View on Explorer →
+                View on Explorer <ArrowUpRight className="w-3 h-3" />
               </a>
             )}
-          </div>
+          </motion.div>
         )}
 
+        {/* Error State */}
         {status === 'error' && (
-          <div className="bg-red-500/10 border border-red-500/20 rounded-xl p-4 text-red-400 text-center">
-            <p>❌ Transaction failed</p>
-            {errorMsg && <p className="text-xs mt-1 text-red-300">{errorMsg}</p>}
-          </div>
+          <motion.div 
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="p-4 rounded-xl bg-red/10 border border-red/20"
+          >
+            <div className="flex items-center gap-2 text-red mb-1">
+              <XCircle className="w-5 h-5" />
+              <span className="font-medium">Transaction Failed</span>
+            </div>
+            {errorMsg && (
+              <p className="text-xs text-red/80 truncate">{errorMsg}</p>
+            )}
+          </motion.div>
         )}
 
-        <div className="text-center text-gray-500 text-sm">
+        {/* Contract Info */}
+        <div className="pt-4 border-t border-white/5">
           <a 
             href={DEPLOYMENT_TX.ARC_CREDIT_TERMINAL}
             target="_blank"
             rel="noopener noreferrer"
-            className="hover:text-blue-400 transition"
+            className="text-xs text-muted hover:text-white transition flex items-center justify-between"
           >
-            Contract: {CONTRACTS.ARC_CREDIT_TERMINAL.slice(0, 10)}...{CONTRACTS.ARC_CREDIT_TERMINAL.slice(-8)} ↗
+            <span>Contract: {CONTRACTS.CREDIT_TERMINAL.slice(0, 10)}...{CONTRACTS.CREDIT_TERMINAL.slice(-6)}</span>
+            <ArrowUpRight className="w-3 h-3" />
           </a>
-          <p className="mt-1">Network: Arc Testnet (5042002)</p>
         </div>
       </div>
-    </div>
+    </motion.div>
   )
 }
