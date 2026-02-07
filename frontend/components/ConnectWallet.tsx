@@ -1,113 +1,118 @@
 'use client'
 
-import { useState } from 'react'
-import { motion } from 'framer-motion'
-import { Wallet, LogOut, Copy, ExternalLink, Check } from 'lucide-react'
-
-declare global {
-  interface Window {
-    ethereum?: {
-      request: (args: { method: string; params?: unknown[] }) => Promise<unknown>
-      on: (event: string, callback: (...args: unknown[]) => void) => void
-    }
-  }
-}
+import { useState, useRef, useEffect } from 'react'
+import { motion, AnimatePresence } from 'framer-motion'
+import { Wallet, LogOut, Copy, ExternalLink, Check, ChevronDown, ArrowLeftRight } from 'lucide-react'
+import { useAccount, useDisconnect } from 'wagmi'
+import { useAppKit } from '@reown/appkit/react'
 
 interface ConnectWalletProps {
-  onConnect: (address: string) => void
-  connected: boolean
-  address: string
   large?: boolean
 }
 
-export default function ConnectWallet({ onConnect, connected, address, large }: ConnectWalletProps) {
-  const [loading, setLoading] = useState(false)
+export default function ConnectWallet({ large }: ConnectWalletProps) {
+  const { address, isConnected, chain } = useAccount()
+  const { disconnect } = useDisconnect()
+  const { open } = useAppKit()
   const [copied, setCopied] = useState(false)
   const [showMenu, setShowMenu] = useState(false)
+  const menuRef = useRef<HTMLDivElement>(null)
 
-  async function handleConnect() {
-    if (!window.ethereum) {
-      alert('Please install MetaMask or another Web3 wallet!')
-      return
-    }
-
-    setLoading(true)
-    try {
-      const accounts = await window.ethereum.request({
-        method: 'eth_requestAccounts',
-      }) as string[]
-      
-      if (accounts[0]) {
-        onConnect(accounts[0])
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setShowMenu(false)
       }
-    } catch (error) {
-      console.error('Failed to connect:', error)
-    } finally {
-      setLoading(false)
     }
-  }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [])
 
   function copyAddress() {
-    navigator.clipboard.writeText(address)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 2000)
+    if (address) {
+      navigator.clipboard.writeText(address)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    }
   }
 
-  if (connected) {
+  function handleDisconnect() {
+    disconnect()
+    setShowMenu(false)
+  }
+
+  if (isConnected && address) {
     return (
-      <div className="relative">
+      <div className="relative" ref={menuRef}>
         <button
           onClick={() => setShowMenu(!showMenu)}
-          className="flex items-center gap-3 px-4 py-2 glass-card hover:bg-white/5 rounded-xl transition"
+          className="flex items-center gap-2.5 px-3 py-2 rounded-xl bg-white/[0.04] border border-white/[0.08] hover:bg-white/[0.07] hover:border-white/[0.15] transition-all duration-200"
         >
-          <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-500 to-purple-500 flex items-center justify-center">
+          <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-emerald-500 to-cyan-500 flex items-center justify-center">
             <Wallet className="w-4 h-4 text-white" />
           </div>
           <div className="text-left hidden sm:block">
-            <p className="text-sm font-medium">
+            <p className="text-sm font-semibold text-white leading-tight">
               {address.slice(0, 6)}...{address.slice(-4)}
             </p>
-            <p className="text-xs text-muted">Arc Testnet</p>
+            <p className="text-[10px] text-slate-500 font-medium">{chain?.name || 'Unknown'}</p>
           </div>
-          <span className="status-dot status-active ml-1" />
+          <span className="status-dot status-active ml-0.5" />
+          <ChevronDown className={`w-3.5 h-3.5 text-slate-500 transition-transform duration-200 ${showMenu ? 'rotate-180' : ''}`} />
         </button>
 
-        {showMenu && (
-          <motion.div
-            initial={{ opacity: 0, y: 10, scale: 0.95 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            className="absolute right-0 top-full mt-2 w-56 glass-card p-2 rounded-xl z-50"
-          >
-            <button
-              onClick={copyAddress}
-              className="w-full flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-white/5 transition text-left"
+        <AnimatePresence>
+          {showMenu && (
+            <motion.div
+              initial={{ opacity: 0, y: 8, scale: 0.95 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 8, scale: 0.95 }}
+              transition={{ duration: 0.15 }}
+              className="absolute right-0 top-full mt-2 w-60 glass-card p-1.5 rounded-xl z-50"
             >
-              {copied ? (
-                <Check className="w-4 h-4 text-green" />
-              ) : (
-                <Copy className="w-4 h-4 text-muted" />
-              )}
-              <span className="text-sm">{copied ? 'Copied!' : 'Copy Address'}</span>
-            </button>
-            <a
-              href={`https://testnet.arcscan.app/address/${address}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="w-full flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-white/5 transition"
-            >
-              <ExternalLink className="w-4 h-4 text-muted" />
-              <span className="text-sm">View on Explorer</span>
-            </a>
-            <div className="my-1 border-t border-white/5" />
-            <button
-              onClick={() => window.location.reload()}
-              className="w-full flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-white/5 transition text-left text-red"
-            >
-              <LogOut className="w-4 h-4" />
-              <span className="text-sm">Disconnect</span>
-            </button>
-          </motion.div>
-        )}
+              <div className="px-3 py-2.5 mb-1">
+                <p className="text-[10px] text-slate-500 uppercase tracking-wider font-medium mb-1">Connected Wallet</p>
+                <p className="text-sm font-mono text-slate-300">{address.slice(0, 10)}...{address.slice(-8)}</p>
+              </div>
+
+              <button
+                onClick={copyAddress}
+                className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg hover:bg-white/[0.06] transition-colors text-left"
+              >
+                {copied ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4 text-slate-500" />}
+                <span className="text-sm text-slate-300">{copied ? 'Copied!' : 'Copy Address'}</span>
+              </button>
+
+              <a
+                href={`https://testnet.arcscan.app/address/${address}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg hover:bg-white/[0.06] transition-colors"
+              >
+                <ExternalLink className="w-4 h-4 text-slate-500" />
+                <span className="text-sm text-slate-300">View on Explorer</span>
+              </a>
+
+              <button
+                onClick={() => { open({ view: 'Networks' }); setShowMenu(false) }}
+                className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg hover:bg-white/[0.06] transition-colors text-left"
+              >
+                <ArrowLeftRight className="w-4 h-4 text-slate-500" />
+                <span className="text-sm text-slate-300">Switch Network</span>
+              </button>
+
+              <div className="my-1 mx-2 border-t border-white/[0.06]" />
+
+              <button
+                onClick={handleDisconnect}
+                className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg hover:bg-red-500/10 transition-colors text-left"
+              >
+                <LogOut className="w-4 h-4 text-red-400" />
+                <span className="text-sm text-red-400">Disconnect</span>
+              </button>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
     )
   }
@@ -115,15 +120,14 @@ export default function ConnectWallet({ onConnect, connected, address, large }: 
   if (large) {
     return (
       <motion.button
-        onClick={handleConnect}
-        disabled={loading}
+        onClick={() => open()}
         whileHover={{ scale: 1.02 }}
         whileTap={{ scale: 0.98 }}
         className="btn-primary px-8 py-4 text-base flex items-center gap-3"
       >
-        <span className="relative z-10 flex items-center gap-3">
+        <span className="relative z-10 flex items-center gap-2.5">
           <Wallet className="w-5 h-5" />
-          {loading ? 'Connecting...' : 'Connect Wallet'}
+          Connect Wallet
         </span>
       </motion.button>
     )
@@ -131,15 +135,14 @@ export default function ConnectWallet({ onConnect, connected, address, large }: 
 
   return (
     <motion.button
-      onClick={handleConnect}
-      disabled={loading}
+      onClick={() => open()}
       whileHover={{ scale: 1.02 }}
       whileTap={{ scale: 0.98 }}
-      className="btn-primary flex items-center gap-2"
+      className="btn-primary flex items-center gap-2 px-5 py-2.5 text-sm"
     >
       <span className="relative z-10 flex items-center gap-2">
         <Wallet className="w-4 h-4" />
-        {loading ? 'Connecting...' : 'Connect'}
+        Connect
       </span>
     </motion.button>
   )
