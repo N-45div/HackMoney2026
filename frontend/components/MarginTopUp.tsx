@@ -2,8 +2,9 @@
 
 import { useState } from 'react'
 import { motion } from 'framer-motion'
-import { parseUnits, createPublicClient, createWalletClient, http, custom, zeroHash } from 'viem'
-import { Zap, ArrowUpRight, CheckCircle2, XCircle, Loader2 } from 'lucide-react'
+import { parseUnits, createPublicClient, http, zeroHash } from 'viem'
+import { useWalletClient, useSwitchChain } from 'wagmi'
+import { Zap, ArrowUpRight, CheckCircle2, XCircle, Loader2, ExternalLink } from 'lucide-react'
 import { arcTestnet, CONTRACTS, ARC_CREDIT_TERMINAL_ABI, ERC20_ABI, DEPLOYMENT_TX } from '../lib/contracts'
 
 interface MarginTopUpProps {
@@ -16,6 +17,8 @@ const publicClient = createPublicClient({
 })
 
 export default function MarginTopUp({ address }: MarginTopUpProps) {
+  const { data: walletClient } = useWalletClient()
+  const { switchChainAsync } = useSwitchChain()
   const [amount, setAmount] = useState('')
   const [loading, setLoading] = useState(false)
   const [status, setStatus] = useState<'idle' | 'approving' | 'depositing' | 'success' | 'error'>('idle')
@@ -24,7 +27,7 @@ export default function MarginTopUp({ address }: MarginTopUpProps) {
 
   const handleDeposit = async () => {
     if (!amount || parseFloat(amount) <= 0) return
-    if (typeof window === 'undefined' || !window.ethereum) {
+    if (!address || !walletClient) {
       setErrorMsg('Please connect a wallet')
       setStatus('error')
       return
@@ -36,12 +39,8 @@ export default function MarginTopUp({ address }: MarginTopUpProps) {
     setTxHash(null)
     
     try {
-      const walletClient = createWalletClient({
-        chain: arcTestnet,
-        transport: custom(window.ethereum),
-      })
+      await switchChainAsync({ chainId: arcTestnet.id })
       
-      const [account] = await walletClient.getAddresses()
       const depositAmount = parseUnits(amount, 6)
       
       const approveHash = await walletClient.writeContract({
@@ -49,7 +48,8 @@ export default function MarginTopUp({ address }: MarginTopUpProps) {
         abi: ERC20_ABI,
         functionName: 'approve',
         args: [CONTRACTS.CREDIT_TERMINAL, depositAmount],
-        account,
+        chain: arcTestnet,
+        account: address as `0x${string}`,
       })
       
       await publicClient.waitForTransactionReceipt({ hash: approveHash })
@@ -60,7 +60,8 @@ export default function MarginTopUp({ address }: MarginTopUpProps) {
         abi: ARC_CREDIT_TERMINAL_ABI,
         functionName: 'depositToCreditLine',
         args: [depositAmount, zeroHash],
-        account,
+        chain: arcTestnet,
+        account: address as `0x${string}`,
       })
       
       setTxHash(depositHash)
@@ -82,33 +83,33 @@ export default function MarginTopUp({ address }: MarginTopUpProps) {
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ delay: 0.1 }}
-      className="glass-card p-6"
+      className="glass-card p-6 md:p-7"
     >
       <div className="flex items-center gap-3 mb-6">
-        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-yellow-500/20 to-orange-500/20 flex items-center justify-center">
-          <Zap className="w-5 h-5 text-yellow" />
+        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-500/15 to-orange-500/15 border border-amber-500/10 flex items-center justify-center">
+          <Zap className="w-5 h-5 text-amber-400" />
         </div>
         <div>
-          <h2 className="font-semibold">Deposit USDC</h2>
-          <p className="text-xs text-muted">Instant margin via Yellow channels</p>
+          <h2 className="text-base font-bold text-white">Deposit USDC</h2>
+          <p className="text-xs text-slate-500">Instant margin via Yellow channels</p>
         </div>
       </div>
 
       <div className="space-y-4">
         {/* Yellow Network Badge */}
-        <div className="p-4 rounded-xl bg-gradient-to-r from-yellow-500/10 to-orange-500/5 border border-yellow-500/20">
-          <div className="flex items-center gap-2 mb-1">
-            <Zap className="w-4 h-4 text-yellow" />
-            <span className="text-sm font-medium text-yellow">Yellow State Channel Active</span>
+        <div className="p-3.5 rounded-xl bg-amber-500/[0.06] border border-amber-500/10">
+          <div className="flex items-center gap-2 mb-0.5">
+            <Zap className="w-3.5 h-3.5 text-amber-400" />
+            <span className="text-sm font-medium text-amber-400">Yellow State Channel Active</span>
           </div>
-          <p className="text-xs text-muted">
+          <p className="text-xs text-slate-500">
             Sub-second transfers, zero gas for top-ups
           </p>
         </div>
 
         {/* Amount Input */}
         <div>
-          <label className="block text-sm text-secondary mb-2">Amount (USDC)</label>
+          <label className="block text-sm text-slate-400 mb-2">Amount (USDC)</label>
           <div className="relative">
             <input
               type="number"
@@ -117,8 +118,8 @@ export default function MarginTopUp({ address }: MarginTopUpProps) {
               placeholder="0.00"
               className="input-field text-xl font-semibold pr-20"
             />
-            <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-2">
-              <span className="text-sm text-muted">USDC</span>
+            <div className="absolute right-4 top-1/2 -translate-y-1/2">
+              <span className="text-sm text-slate-500 font-medium">USDC</span>
             </div>
           </div>
         </div>
@@ -129,10 +130,10 @@ export default function MarginTopUp({ address }: MarginTopUpProps) {
             <button
               key={val}
               onClick={() => setAmount(val)}
-              className={`py-2 rounded-lg text-sm font-medium transition ${
+              className={`py-2.5 rounded-xl text-sm font-semibold transition-all duration-200 ${
                 amount === val 
-                  ? 'bg-blue-500/20 text-blue border border-blue-500/30' 
-                  : 'bg-white/5 text-secondary hover:bg-white/10 border border-transparent'
+                  ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30' 
+                  : 'bg-white/[0.03] text-slate-400 hover:bg-white/[0.06] border border-transparent hover:border-white/[0.08]'
               }`}
             >
               ${val}
@@ -146,15 +147,15 @@ export default function MarginTopUp({ address }: MarginTopUpProps) {
           disabled={loading || !amount}
           whileHover={{ scale: loading ? 1 : 1.01 }}
           whileTap={{ scale: loading ? 1 : 0.99 }}
-          className={`w-full py-4 rounded-xl font-semibold transition flex items-center justify-center gap-2 ${
+          className={`w-full py-4 rounded-xl font-semibold text-sm transition-all flex items-center justify-center gap-2 ${
             loading || !amount
-              ? 'bg-white/5 text-muted cursor-not-allowed'
+              ? 'bg-white/[0.04] text-slate-600 cursor-not-allowed'
               : 'btn-primary'
           }`}
         >
           {loading ? (
             <>
-              <Loader2 className="w-5 h-5 animate-spin" />
+              <Loader2 className="w-4 h-4 animate-spin" />
               <span>{status === 'approving' ? 'Approving USDC...' : 'Depositing...'}</span>
             </>
           ) : (
@@ -170,20 +171,20 @@ export default function MarginTopUp({ address }: MarginTopUpProps) {
           <motion.div 
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
-            className="p-4 rounded-xl bg-green/10 border border-green/20"
+            className="p-4 rounded-xl bg-emerald-500/[0.08] border border-emerald-500/15"
           >
-            <div className="flex items-center gap-2 text-green mb-2">
-              <CheckCircle2 className="w-5 h-5" />
-              <span className="font-medium">Deposit Successful!</span>
+            <div className="flex items-center gap-2 text-emerald-400 mb-1.5">
+              <CheckCircle2 className="w-4 h-4" />
+              <span className="text-sm font-medium">Deposit Successful!</span>
             </div>
             {txHash && (
               <a 
                 href={`https://testnet.arcscan.app/tx/${txHash}`}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-xs text-green/80 hover:text-green flex items-center gap-1"
+                className="text-xs text-emerald-400/70 hover:text-emerald-400 flex items-center gap-1 transition-colors"
               >
-                View on Explorer <ArrowUpRight className="w-3 h-3" />
+                View on Explorer <ExternalLink className="w-3 h-3" />
               </a>
             )}
           </motion.div>
@@ -194,28 +195,28 @@ export default function MarginTopUp({ address }: MarginTopUpProps) {
           <motion.div 
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
-            className="p-4 rounded-xl bg-red/10 border border-red/20"
+            className="p-4 rounded-xl bg-red-500/[0.08] border border-red-500/15"
           >
-            <div className="flex items-center gap-2 text-red mb-1">
-              <XCircle className="w-5 h-5" />
-              <span className="font-medium">Transaction Failed</span>
+            <div className="flex items-center gap-2 text-red-400 mb-1">
+              <XCircle className="w-4 h-4" />
+              <span className="text-sm font-medium">Transaction Failed</span>
             </div>
             {errorMsg && (
-              <p className="text-xs text-red/80 truncate">{errorMsg}</p>
+              <p className="text-xs text-red-400/70 truncate">{errorMsg}</p>
             )}
           </motion.div>
         )}
 
         {/* Contract Info */}
-        <div className="pt-4 border-t border-white/5">
+        <div className="pt-4 border-t border-white/[0.06]">
           <a 
             href={DEPLOYMENT_TX.ARC_CREDIT_TERMINAL}
             target="_blank"
             rel="noopener noreferrer"
-            className="text-xs text-muted hover:text-white transition flex items-center justify-between"
+            className="text-xs text-slate-500 hover:text-white transition-colors flex items-center justify-between"
           >
             <span>Contract: {CONTRACTS.CREDIT_TERMINAL.slice(0, 10)}...{CONTRACTS.CREDIT_TERMINAL.slice(-6)}</span>
-            <ArrowUpRight className="w-3 h-3" />
+            <ExternalLink className="w-3 h-3" />
           </a>
         </div>
       </div>

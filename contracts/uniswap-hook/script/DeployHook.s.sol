@@ -5,11 +5,18 @@ import {Script, console} from "forge-std/Script.sol";
 import {AntiSniperHook} from "../src/AntiSniperHook.sol";
 import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 import {Hooks} from "@uniswap/v4-core/src/libraries/Hooks.sol";
+import {HookMiner} from "v4-periphery/src/utils/HookMiner.sol";
 
 /// @title DeployAntiSniperHook
-/// @notice Deployment script for AntiSniperHook on Base Sepolia
-/// @dev Uniswap v4 PoolManager addresses from https://docs.uniswap.org/contracts/v4/deployments
+/// @notice Deployment script for AntiSniperHook using CREATE2 salt mining
+/// @dev Uniswap v4 hooks require specific flag bits in the deployed address.
+///      Uses the deterministic CREATE2 deployer proxy (0x4e59b448...) which is
+///      available on all standard EVM chains including Sepolia.
 contract DeployAntiSniperHook is Script {
+    // Standard CREATE2 Deployer Proxy (available on all EVM chains)
+    // This proxy deploys contracts via CREATE2 when you send it: salt ++ initcode
+    address constant CREATE2_DEPLOYER = 0x4e59b44847b379578588920cA78FbF26c0B4956C;
+
     // Base Sepolia PoolManager address (Uniswap v4)
     // Source: https://docs.uniswap.org/contracts/v4/deployments
     address constant BASE_SEPOLIA_POOL_MANAGER = 0x7Da1D65F8B249183667cdE74C5CBD46dD38AA829;
@@ -20,16 +27,43 @@ contract DeployAntiSniperHook is Script {
     function run() external returns (AntiSniperHook) {
         uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
         
-        // Default to Base Sepolia, can be overridden via env
-        address poolManager = vm.envOr("POOL_MANAGER", BASE_SEPOLIA_POOL_MANAGER);
+        // Default to Ethereum Sepolia, can be overridden via env
+        address poolManager = vm.envOr("POOL_MANAGER", ETH_SEPOLIA_POOL_MANAGER);
         
         require(poolManager != address(0), "Invalid PoolManager address");
-        
+
+        // Hook needs beforeSwap + afterSwap flags
+        uint160 flags = uint160(Hooks.BEFORE_SWAP_FLAG | Hooks.AFTER_SWAP_FLAG);
+
+        bytes memory creationCode = type(AntiSniperHook).creationCode;
+        bytes memory constructorArgs = abi.encode(poolManager);
+
+        // Mine a CREATE2 salt that produces an address with the correct flag bits
+        console.log("Mining CREATE2 salt for hook flags...");
+        (address hookAddress, bytes32 salt) = HookMiner.find(
+            CREATE2_DEPLOYER,
+            flags,
+            creationCode,
+            constructorArgs
+        );
+        console.log("Found valid hook address:", hookAddress);
+        console.log("Salt:");
+        console.logBytes32(salt);
+
+        // Build the payload for the CREATE2 deployer proxy: salt ++ initcode
+        bytes memory initcode = abi.encodePacked(creationCode, constructorArgs);
+        bytes memory payload = abi.encodePacked(salt, initcode);
+
         vm.startBroadcast(deployerPrivateKey);
         
-        // Deploy hook - note: for v4 hooks, address must have correct flags
-        // This is a simplified deployment - production needs CREATE2 mining for correct address
-        AntiSniperHook hook = new AntiSniperHook(IPoolManager(poolManager));
+        // Send the CREATE2 deployment via the deterministic deployer proxy
+        (bool success,) = CREATE2_DEPLOYER.call(payload);
+        require(success, "CREATE2 deployment failed");
+        
+        // Verify deployment
+        require(hookAddress.code.length > 0, "Hook not deployed at expected address");
+        
+        AntiSniperHook hook = AntiSniperHook(hookAddress);
         
         console.log("AntiSniperHook deployed at:", address(hook));
         console.log("PoolManager:", poolManager);
@@ -37,65 +71,5 @@ contract DeployAntiSniperHook is Script {
         vm.stopBroadcast();
         
         return hook;
-    }
-    
-    /// @notice Helper to find a valid hook address using CREATE2
-    /// @dev Hook addresses must have specific flag bits set in the address
-    function findHookAddress(
-        address deployer,
-        bytes32 salt,
-        address poolManager
-    ) public pure returns (address) {
-        // Hook flags required: beforeSwap, afterSwap
-        uint160 flags = uint160(Hooks.BEFORE_SWAP_FLAG | Hooks.AFTER_SWAP_FLAG);
-        
-        bytes memory creationCode = abi.encodePacked(
-            type(AntiSniperHook).creationCode,
-            abi.encode(poolManager)
-        );
-        
-        bytes32 hash = keccak256(abi.encodePacked(
-            bytes1(0xff),
-            deployer,
-            salt,
-            keccak256(creationCode)
-        ));
-        
-        address hookAddress = address(uint160(uint256(hash)));
-        
-        // Verify flags match
-        require(
-            uint160(hookAddress) & flags == flags,
-            "Address doesn't have correct flags"
-        );
-        
-        return hookAddress;
-    }
-    
-    /// @notice Mine for a valid CREATE2 salt that produces correct hook flags
-    function mineSalt(address deployer, address poolManager, uint256 startSalt) public pure returns (bytes32) {
-        uint160 flags = uint160(Hooks.BEFORE_SWAP_FLAG | Hooks.AFTER_SWAP_FLAG);
-        
-        bytes memory creationCode = abi.encodePacked(
-            type(AntiSniperHook).creationCode,
-            abi.encode(poolManager)
-        );
-        bytes32 initCodeHash = keccak256(creationCode);
-        
-        for (uint256 i = startSalt; i < startSalt + 100000; i++) {
-            bytes32 salt = bytes32(i);
-            address hookAddress = address(uint160(uint256(keccak256(abi.encodePacked(
-                bytes1(0xff),
-                deployer,
-                salt,
-                initCodeHash
-            )))));
-            
-            if (uint160(hookAddress) & flags == flags) {
-                return salt;
-            }
-        }
-        
-        revert("No valid salt found in range");
     }
 }

@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
 import { createPublicClient, http, formatUnits } from 'viem'
-import { TrendingUp, TrendingDown, DollarSign, CreditCard, AlertTriangle, RefreshCw } from 'lucide-react'
+import { TrendingUp, TrendingDown, DollarSign, CreditCard, AlertTriangle, RefreshCw, ExternalLink } from 'lucide-react'
 import { arcTestnet, CONTRACTS, ARC_CREDIT_TERMINAL_ABI, DEPLOYMENT_TX } from '../lib/contracts'
 
 interface CreditInfo {
@@ -84,45 +84,45 @@ export default function CreditDashboard({ address }: CreditDashboardProps) {
     <motion.div 
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
-      className="glass-card p-6"
+      className="glass-card p-6 md:p-7"
     >
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-cyan-500/20 to-blue-500/20 flex items-center justify-center">
-            <CreditCard className="w-5 h-5 text-cyan" />
+          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-cyan-500/15 to-blue-500/15 border border-cyan-500/10 flex items-center justify-center">
+            <CreditCard className="w-5 h-5 text-cyan-400" />
           </div>
           <div>
-            <h2 className="font-semibold">Credit Dashboard</h2>
-            <p className="text-xs text-muted">Arc Testnet</p>
+            <h2 className="text-base font-bold text-white">Credit Dashboard</h2>
+            <p className="text-xs text-slate-500">Arc Testnet</p>
           </div>
         </div>
         <button 
           onClick={handleRefresh}
           disabled={refreshing}
-          className="p-2 rounded-lg hover:bg-white/5 transition"
+          className="p-2 rounded-lg hover:bg-white/[0.06] transition-colors disabled:opacity-50"
         >
-          <RefreshCw className={`w-4 h-4 text-muted ${refreshing ? 'animate-spin' : ''}`} />
+          <RefreshCw className={`w-4 h-4 text-slate-500 ${refreshing ? 'animate-spin' : ''}`} />
         </button>
       </div>
 
       {loading && !creditInfo ? (
         <div className="text-center py-12">
-          <div className="w-10 h-10 border-2 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
-          <p className="text-sm text-muted">Loading credit info...</p>
+          <div className="w-8 h-8 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
+          <p className="text-sm text-slate-500">Loading credit info...</p>
         </div>
       ) : error ? (
         <div className="text-center py-12">
-          <AlertTriangle className="w-10 h-10 text-red mx-auto mb-4" />
-          <p className="text-sm text-red">{error}</p>
+          <AlertTriangle className="w-8 h-8 text-red-400 mx-auto mb-3" />
+          <p className="text-sm text-red-400">{error}</p>
         </div>
       ) : (
         <>
           <div className="mb-6">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-sm text-secondary">Health Factor</span>
+            <div className="flex items-center justify-between mb-2.5">
+              <span className="text-sm text-slate-400">Health Factor</span>
               <span className={`text-sm font-semibold ${
-                healthStatus === 'danger' ? 'text-red' :
-                healthStatus === 'warning' ? 'text-yellow' : 'text-green'
+                healthStatus === 'danger' ? 'text-red-400' :
+                healthStatus === 'warning' ? 'text-amber-400' : 'text-emerald-400'
               }`}>
                 {utilizationRate}% Utilized
               </span>
@@ -141,50 +141,51 @@ export default function CreditDashboard({ address }: CreditDashboardProps) {
           <div className="grid grid-cols-2 gap-3">
             <div className="metric-card">
               <div className="flex items-center gap-2 mb-2">
-                <TrendingUp className="w-4 h-4 text-green" />
-                <span className="text-xs text-muted uppercase">Deposited</span>
+                <TrendingUp className="w-3.5 h-3.5 text-emerald-400" />
+                <span className="text-[10px] text-slate-500 uppercase tracking-wider font-medium">Deposited</span>
               </div>
-              <p className="metric-value text-green">
+              <p className="text-2xl font-bold text-emerald-400 tracking-tight">
                 ${creditInfo ? parseFloat(formatUnits(creditInfo.deposited, 6)).toFixed(2) : '0.00'}
               </p>
             </div>
             <div className="metric-card">
               <div className="flex items-center gap-2 mb-2">
-                <TrendingDown className="w-4 h-4 text-orange" />
-                <span className="text-xs text-muted uppercase">Borrowed</span>
+                <TrendingDown className="w-3.5 h-3.5 text-orange-400" />
+                <span className="text-[10px] text-slate-500 uppercase tracking-wider font-medium">Borrowed</span>
               </div>
-              <p className="metric-value text-orange">
+              <p className="text-2xl font-bold text-orange-400 tracking-tight">
                 ${creditInfo ? parseFloat(formatUnits(creditInfo.borrowed, 6)).toFixed(2) : '0.00'}
               </p>
             </div>
-            <div className="metric-card ring-1 ring-cyan/30">
+            <div className="metric-card border-cyan-500/15">
               <div className="flex items-center gap-2 mb-2">
-                <DollarSign className="w-4 h-4 text-cyan" />
-                <span className="text-xs text-muted uppercase">Available</span>
+                <DollarSign className="w-3.5 h-3.5 text-cyan-400" />
+                <span className="text-[10px] text-slate-500 uppercase tracking-wider font-medium">Available</span>
               </div>
-              <p className="metric-value text-cyan">
+              <p className="text-2xl font-bold text-cyan-400 tracking-tight">
                 ${creditInfo ? parseFloat(formatUnits(creditInfo.available, 6)).toFixed(2) : '0.00'}
               </p>
             </div>
             <div className="metric-card">
               <div className="flex items-center gap-2 mb-2">
-                <CreditCard className="w-4 h-4 text-purple" />
-                <span className="text-xs text-muted uppercase">Limit</span>
+                <CreditCard className="w-3.5 h-3.5 text-slate-300" />
+                <span className="text-[10px] text-slate-500 uppercase tracking-wider font-medium">Limit</span>
               </div>
-              <p className="metric-value text-purple">
+              <p className="text-2xl font-bold text-slate-300 tracking-tight">
                 ${creditInfo ? parseFloat(formatUnits(creditInfo.creditLimit, 6)).toFixed(2) : '0.00'}
               </p>
             </div>
           </div>
 
-          <div className="mt-6 pt-4 border-t border-white/5">
+          <div className="mt-5 pt-4 border-t border-white/[0.06]">
             <a 
               href={DEPLOYMENT_TX.ARC_CREDIT_TERMINAL}
               target="_blank"
               rel="noopener noreferrer"
-              className="text-xs text-muted hover:text-white transition"
+              className="text-xs text-slate-500 hover:text-white transition-colors flex items-center gap-1.5"
             >
-              Contract: {CONTRACTS.CREDIT_TERMINAL.slice(0, 10)}...{CONTRACTS.CREDIT_TERMINAL.slice(-8)} ↗
+              Contract: {CONTRACTS.CREDIT_TERMINAL.slice(0, 10)}...{CONTRACTS.CREDIT_TERMINAL.slice(-8)}
+              <ExternalLink className="w-3 h-3" />
             </a>
           </div>
         </>
