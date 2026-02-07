@@ -74,6 +74,7 @@ graph TB
     CB --> CCTP
     ACT --> ASH
     ASH --> V4
+    LLM --> ACT
 ```
 
 ## Transaction Flow
@@ -82,6 +83,7 @@ graph TB
 sequenceDiagram
     participant User
     participant UI as Web App
+    participant LLM as OpenRouter Agent
     participant ACT as ArcCreditTerminal
     participant YN as Yellow ClearNode
     participant CCTP as Circle CCTP
@@ -91,26 +93,34 @@ sequenceDiagram
     UI->>ACT: depositToCreditLine(10000)
     ACT-->>User: Credit line: 10,000 USDC
     
-    User->>UI: 2. Connect to Yellow Network
+    User->>UI: 2. Trigger AI Agent
+    UI->>LLM: Analyze(utilization, limit)
+    LLM-->>UI: { action: "TOP_UP", amount: "10" }
+    UI->>ACT: agentTopUp(user, 10 USDC)
+    ACT-->>User: Margin restored (Agentic Action) 
+    
+    User->>UI: 3. Connect to Yellow Network
     UI->>YN: createAuthRequest + EIP-712 sign
     YN-->>User: Authenticated 
-    User->>UI: 3. Create Payment Session
+    
+    User->>UI: 4. Create Payment Session
     UI->>YN: createAppSessionMessage
     YN-->>User: Session ID + allocations
     
-    User->>UI: 4. Send Instant Transfer (10 USDC)
+    User->>UI: 5. Send Instant Transfer
     UI->>YN: createTransferMessage
     YN-->>User: Transfer confirmed (<100ms, $0 gas)
     
-    User->>UI: 5. Bridge from Sepolia
+    User->>UI: 6. Bridge USDC from Sepolia
     UI->>CCTP: depositForBurn on Sepolia
     CCTP->>CCTP: Attestation (30-60s)
     UI->>ACT: receiveMessage on Arc
     ACT-->>User: USDC minted on Arc 
-    User->>UI: 6. MEV-Protected Order
+    
+    User->>UI: 7. MEV-Protected Order
     UI->>Hook: commit(hash)
-    Hook-->>User: Commitment stored
-    Note over Hook: Wait 1 block
+    Hook-->>User: Commitment stored 
+    Note over Hook: Wait 1 block minimum
     UI->>Hook: reveal(amount, nonce)
     Hook-->>User: Reveal verified 
 ```
