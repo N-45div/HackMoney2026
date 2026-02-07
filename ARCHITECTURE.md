@@ -49,42 +49,45 @@ graph TB
     ACT --> ASH
 ```
 
-## End-to-End Flow
+## End-to-End Flow (Actual Implementation)
 
 ```mermaid
 sequenceDiagram
-    participant Trader
+    participant User
     participant UI as Web App
     participant ACT as ArcCreditTerminal
-    participant YN as Yellow Nitrolite
-    participant Agent as Margin Agent
+    participant YN as Yellow ClearNode
     participant CCTP as Circle CCTP
-    participant Hook as Uniswap v4 Hook
+    participant Hook as AntiSniperHook
 
-    Trader->>UI: Deposit 10,000 USDC
-    UI->>ACT: deposit(10000)
-    ACT-->>Trader: Credit line opened
+    User->>UI: 1. Deposit USDC
+    UI->>ACT: depositToCreditLine(amount)
+    ACT-->>User: Credit line opened ✓
     
-    Trader->>YN: Open state channel
-    YN-->>Trader: Session with 1,000 allowance
+    User->>UI: 2. Connect to Yellow Network
+    UI->>YN: WebSocket + Auth (EIP-712)
+    YN-->>User: Authenticated ✓
     
-    Note over Trader,Agent: Trading activity (off-chain)
+    User->>UI: 3. Create Payment Session
+    UI->>YN: createAppSessionMessage
+    YN-->>User: Session ID + allocations ✓
     
-    Agent->>YN: Monitor margin level
-    YN-->>Agent: Margin = 200 (LOW!)
+    User->>UI: 4. Send Instant Transfer
+    UI->>YN: createTransferMessage
+    YN-->>User: Transfer confirmed (<100ms, $0 gas) ✓
     
-    Agent->>YN: Instant off-chain top-up
-    YN-->>Trader: +800 USDC (< 100ms, $0 gas)
+    User->>UI: 5. Bridge USDC from Sepolia
+    UI->>CCTP: depositForBurn on Sepolia
+    CCTP->>CCTP: Attestation (30-60s)
+    UI->>ACT: receiveMessage on Arc
+    ACT-->>User: USDC minted on Arc ✓
     
-    Agent->>CCTP: Bridge 5,000 USDC
-    CCTP->>ACT: Mint USDC on Arc
-    
-    ACT->>Hook: commit(orderHash)
-    Hook->>Hook: Hide order details
-    ACT->>Hook: reveal(amount, salt)
-    Hook-->>ACT: Execute swap (MEV-protected)
-    
-    ACT-->>Trader: Credit line restored
+    User->>UI: 6. MEV-Protected Order
+    UI->>Hook: commit(hash)
+    Hook-->>User: Commitment stored ✓
+    Note over Hook: Wait 1 block minimum
+    UI->>Hook: reveal(amount, nonce)
+    Hook-->>User: Reveal verified ✓
 ```
 
 ## Component Architecture
