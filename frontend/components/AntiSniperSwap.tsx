@@ -19,6 +19,7 @@ import {
 import {
   SEPOLIA_CONTRACTS,
   ANTI_SNIPER_HOOK_ABI,
+  POOL_MANAGER_ABI,
 } from '../lib/contracts'
 
 interface AntiSniperSwapProps {
@@ -30,7 +31,7 @@ const sepoliaClient = createPublicClient({
   transport: http(),
 })
 
-type SwapStep = 'idle' | 'committing' | 'committed' | 'revealing' | 'revealed' | 'error'
+type SwapStep = 'idle' | 'committing' | 'committed' | 'revealing' | 'revealed' | 'swapping' | 'complete' | 'error'
 
 export default function AntiSniperSwap({ address }: AntiSniperSwapProps) {
   const { data: walletClient } = useWalletClient()
@@ -40,6 +41,7 @@ export default function AntiSniperSwap({ address }: AntiSniperSwapProps) {
   const [loading, setLoading] = useState(false)
   const [commitTxHash, setCommitTxHash] = useState<string | null>(null)
   const [revealTxHash, setRevealTxHash] = useState<string | null>(null)
+  const [swapTxHash, setSwapTxHash] = useState<string | null>(null)
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
   const [nonce, setNonce] = useState<bigint>(0n)
   const [commitHash, setCommitHash] = useState<string | null>(null)
@@ -143,11 +145,57 @@ export default function AntiSniperSwap({ address }: AntiSniperSwapProps) {
     }
   }
 
+  const handleSwap = async () => {
+    if (!amount || !address || !walletClient) return
+
+    setLoading(true)
+    setStep('swapping')
+    setErrorMsg(null)
+
+    try {
+      await switchChainAsync({ chainId: sepolia.id })
+
+      const swapAmount = parseUnits(amount, 6)
+
+      // Prepare swap parameters
+      const swapParams = {
+        zeroForOne: false, // USDC -> ETH (currency1 -> currency0)
+        amountSpecified: BigInt(swapAmount), // Exact input
+        sqrtPriceLimitX96: 0n, // No price limit
+      }
+
+      // hookData with REQUIRE_COMMIT to enforce commit-reveal check
+      const hookData = '0x5245515549524520434f4d4d4954' // "REQUIRE_COMMIT" in hex
+
+      // Execute swap through PoolManager
+      const txHash = await walletClient.writeContract({
+        address: SEPOLIA_CONTRACTS.POOL_MANAGER,
+        abi: POOL_MANAGER_ABI,
+        functionName: 'swap',
+        args: [POOL_KEY, swapParams, hookData],
+        chain: sepolia,
+        account: address as `0x${string}`,
+      })
+      setSwapTxHash(txHash)
+
+      await sepoliaClient.waitForTransactionReceipt({ hash: txHash })
+
+      setStep('complete')
+    } catch (err) {
+      console.error('Swap failed:', err)
+      setErrorMsg(err instanceof Error ? err.message : 'Swap execution failed')
+      setStep('error')
+    } finally {
+      setLoading(false)
+    }
+  }
+
   const reset = () => {
     setStep('idle')
     setAmount('')
     setCommitTxHash(null)
     setRevealTxHash(null)
+    setSwapTxHash(null)
     setErrorMsg(null)
     setNonce(0n)
     setCommitHash(null)
@@ -288,6 +336,30 @@ export default function AntiSniperSwap({ address }: AntiSniperSwapProps) {
           </motion.button>
         ) : step === 'revealed' ? (
           <motion.button
+            onClick={handleSwap}
+            disabled={loading}
+            whileHover={{ scale: loading ? 1 : 1.01 }}
+            whileTap={{ scale: loading ? 1 : 0.99 }}
+            className={`w-full py-4 rounded-xl font-semibold text-sm transition-all flex items-center justify-center gap-2 ${
+              loading
+                ? 'bg-white/[0.04] text-slate-600 cursor-not-allowed'
+                : 'btn-primary'
+            }`}
+          >
+            {loading ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin" />
+                <span>Swapping...</span>
+              </>
+            ) : (
+              <>
+                <Shield className="w-4 h-4 relative z-10" />
+                <span className="relative z-10">Execute Protected Swap</span>
+              </>
+            )}
+          </motion.button>
+        ) : step === 'complete' ? (
+          <motion.button
             onClick={reset}
             whileHover={{ scale: 1.01 }}
             whileTap={{ scale: 0.99 }}
@@ -327,10 +399,31 @@ export default function AntiSniperSwap({ address }: AntiSniperSwapProps) {
           >
             <div className="flex items-center gap-2 text-emerald-400 mb-1">
               <CheckCircle2 className="w-3.5 h-3.5" />
-              <span className="text-xs font-medium">Reveal tx confirmed — swap MEV-protected!</span>
+              <span className="text-xs font-medium">Reveal tx confirmed</span>
             </div>
             <a
               href={`https://sepolia.etherscan.io/tx/${revealTxHash}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-[10px] text-emerald-400/70 hover:text-emerald-400 flex items-center gap-1 transition-colors"
+            >
+              View on Etherscan <ExternalLink className="w-2.5 h-2.5" />
+            </a>
+          </motion.div>
+        )}
+
+        {swapTxHash && (
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="p-3 rounded-xl bg-emerald-500/[0.06] border border-emerald-500/10"
+          >
+            <div className="flex items-center gap-2 text-emerald-400 mb-1">
+              <CheckCircle2 className="w-3.5 h-3.5" />
+              <span className="text-xs font-medium">Swap executed successfully!</span>
+            </div>
+            <a
+              href={`https://sepolia.etherscan.io/tx/${swapTxHash}`}
               target="_blank"
               rel="noopener noreferrer"
               className="text-[10px] text-emerald-400/70 hover:text-emerald-400 flex items-center gap-1 transition-colors"

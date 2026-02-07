@@ -281,6 +281,38 @@ export const ARC_CREDIT_TERMINAL_ABI = [
   },
 ] as const
 
+// Uniswap v4 PoolManager ABI (minimal for swap)
+export const POOL_MANAGER_ABI = [
+  {
+    inputs: [
+      { name: 'key', type: 'tuple', components: [
+        { name: 'currency0', type: 'address' },
+        { name: 'currency1', type: 'address' },
+        { name: 'fee', type: 'uint24' },
+        { name: 'tickSpacing', type: 'int24' },
+        { name: 'hooks', type: 'address' },
+      ]},
+      { name: 'params', type: 'tuple', components: [
+        { name: 'zeroForOne', type: 'bool' },
+        { name: 'amountSpecified', type: 'int256' },
+        { name: 'sqrtPriceLimitX96', type: 'uint160' },
+      ]},
+      { name: 'hookData', type: 'bytes' },
+    ],
+    name: 'swap',
+    outputs: [{ name: 'swapDelta', type: 'int256' }],
+    stateMutability: 'nonpayable',
+    type: 'function',
+  },
+  {
+    inputs: [{ name: 'data', type: 'bytes' }],
+    name: 'unlock',
+    outputs: [{ name: '', type: 'bytes' }],
+    stateMutability: 'nonpayable',
+    type: 'function',
+  },
+] as const
+
 // ERC20 ABI (minimal for USDC)
 export const ERC20_ABI = [
   {
