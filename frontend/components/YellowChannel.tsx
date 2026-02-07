@@ -15,6 +15,7 @@ import {
   Radio,
   Send,
   LogOut,
+  ArrowRight,
 } from 'lucide-react'
 
 interface YellowChannelProps {
@@ -36,6 +37,7 @@ export default function YellowChannel({ address }: YellowChannelProps) {
   const [counterparty, setCounterparty] = useState('')
   const [transferring, setTransferring] = useState(false)
   const [jwtToken, setJwtToken] = useState<string | null>(null)
+  const [sendAmount, setSendAmount] = useState('10')
 
   // Store auth request params for EIP-712 signing
   const authParamsRef = useRef<any>(null)
@@ -85,7 +87,7 @@ export default function YellowChannel({ address }: YellowChannelProps) {
             expires_at: expiresAt,
             scope: 'console',
             allowances: [
-              { asset: 'ETH', amount: '10000' },
+              { asset: 'ytest.usd', amount: '10000' },
             ],
           })
 
@@ -96,7 +98,7 @@ export default function YellowChannel({ address }: YellowChannelProps) {
             participant: address,
             expires_at: expiresAt,
             allowances: [
-              { asset: 'ETH', amount: '10000' },
+              { asset: 'ytest.usd', amount: '10000' },
             ],
           }
 
@@ -237,8 +239,8 @@ export default function YellowChannel({ address }: YellowChannelProps) {
             nonce: Date.now(),
           },
           allocations: [
-            { participant: address as `0x${string}`, asset: 'ETH', amount: transferAmount },
-            { participant: participant2 as `0x${string}`, asset: 'ETH', amount: '0' },
+            { participant: address as `0x${string}`, asset: 'ytest.usd', amount: transferAmount },
+            { participant: participant2 as `0x${string}`, asset: 'ytest.usd', amount: '0' },
           ],
         }
       )
@@ -248,6 +250,47 @@ export default function YellowChannel({ address }: YellowChannelProps) {
       addLog(`Session creation failed: ${err instanceof Error ? err.message : 'Unknown'}`, 'error')
     }
   }, [status, address, counterparty, transferAmount, walletClient, addLog])
+
+  // Send off-chain transfer
+  const sendTransfer = useCallback(async () => {
+    if (!wsRef.current || status !== 'connected' || !sessionId || !address) {
+      addLog('Cannot send: no active session', 'error')
+      return
+    }
+
+    const recipient = counterparty || address
+    setTransferring(true)
+    addLog(`Sending ${sendAmount} ytest.usd to ${recipient.slice(0, 8)}...`, 'send')
+
+    try {
+      const messageSigner = async (payload: any) => {
+        if (!walletClient) throw new Error('No wallet client')
+        const message = JSON.stringify(payload)
+        const signature = await walletClient.signMessage({ message })
+        return signature as `0x${string}`
+      }
+
+      // Create transfer message using Nitrolite SDK
+      // Transfer uses allocations array to specify new balances after transfer
+      const transferMsg = await Nitrolite.createTransferMessage(
+        messageSigner,
+        {
+          destination: recipient as `0x${string}`,
+          allocations: [
+            { destination: address as `0x${string}`, asset: 'ytest.usd', amount: '0' },
+            { destination: recipient as `0x${string}`, asset: 'ytest.usd', amount: sendAmount },
+          ],
+        }
+      )
+
+      wsRef.current.send(transferMsg)
+      addLog(`Transfer sent: ${sendAmount} ytest.usd`, 'success')
+    } catch (err) {
+      addLog(`Transfer failed: ${err instanceof Error ? err.message : 'Unknown'}`, 'error')
+    } finally {
+      setTransferring(false)
+    }
+  }, [status, sessionId, address, counterparty, sendAmount, walletClient, addLog])
 
   // Cleanup on unmount
   useEffect(() => {
@@ -388,6 +431,48 @@ export default function YellowChannel({ address }: YellowChannelProps) {
                 Disconnect
               </motion.button>
             </div>
+
+            {/* Transfer Section - Only show when session is active */}
+            {sessionId && (
+              <div className="p-4 rounded-xl bg-yellow-500/[0.04] border border-yellow-500/10 space-y-3">
+                <div className="flex items-center gap-2 mb-2">
+                  <ArrowRight className="w-4 h-4 text-yellow-400" />
+                  <span className="text-sm font-medium text-yellow-400">Instant Off-Chain Transfer</span>
+                </div>
+                <div className="grid grid-cols-3 gap-2">
+                  <div className="col-span-2">
+                    <input
+                      type="number"
+                      value={sendAmount}
+                      onChange={(e) => setSendAmount(e.target.value)}
+                      placeholder="10"
+                      className="input-field text-sm w-full"
+                    />
+                  </div>
+                  <motion.button
+                    onClick={sendTransfer}
+                    disabled={transferring || !sendAmount}
+                    whileHover={{ scale: transferring ? 1 : 1.02 }}
+                    whileTap={{ scale: transferring ? 1 : 0.98 }}
+                    className={`py-2.5 rounded-xl text-sm font-semibold flex items-center justify-center gap-1.5 transition-all ${
+                      transferring
+                        ? 'bg-yellow-500/20 text-yellow-400/50 cursor-wait'
+                        : 'bg-yellow-500/20 text-yellow-400 hover:bg-yellow-500/30'
+                    }`}
+                  >
+                    {transferring ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <ArrowRight className="w-3.5 h-3.5" />
+                    )}
+                    Send
+                  </motion.button>
+                </div>
+                <p className="text-[10px] text-slate-500">
+                  Transfers are instant (&lt;100ms) and gas-free via Yellow state channel.
+                </p>
+              </div>
+            )}
           </>
         )}
 

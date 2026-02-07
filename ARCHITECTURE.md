@@ -22,9 +22,14 @@ graph TB
         BM[Bridge Monitor]
     end
 
+    subgraph "AI Agent Layer"
+        API[Next.js API Route<br/>/api/agent]
+        LLM[OpenRouter LLM<br/>Llama 3 8B]
+    end
+
     subgraph "Smart Contracts - Arc Testnet"
         ACT[ArcCreditTerminal.sol<br/>0xd1835d13...aae5]
-        ASH[AntiSniperHook.sol<br/>Uniswap v4]
+        ASH[AntiSniperHook.sol<br/>Uniswap v4 on Sepolia]
     end
 
     subgraph "Integration Layer"
@@ -40,6 +45,10 @@ graph TB
     UI --> CD
     UI --> MT
     UI --> BM
+    CD --> API
+    API --> LLM
+    LLM --> API
+    API --> ACT
     CD --> ACT
     MT --> YN
     BM --> CC
@@ -49,42 +58,55 @@ graph TB
     ACT --> ASH
 ```
 
-## End-to-End Flow
+## End-to-End Flow (Actual Implementation)
 
 ```mermaid
 sequenceDiagram
-    participant Trader
+    participant User
     participant UI as Web App
+    participant Agent as LLM Agent (OpenRouter)
     participant ACT as ArcCreditTerminal
-    participant YN as Yellow Nitrolite
-    participant Agent as Margin Agent
+    participant YN as Yellow ClearNode
     participant CCTP as Circle CCTP
-    participant Hook as Uniswap v4 Hook
+    participant Hook as AntiSniperHook
 
-    Trader->>UI: Deposit 10,000 USDC
-    UI->>ACT: deposit(10000)
-    ACT-->>Trader: Credit line opened
+    User->>UI: 1. Deposit USDC
+    UI->>ACT: depositToCreditLine(amount)
+    ACT-->>User: Credit line opened ✓
     
-    Trader->>YN: Open state channel
-    YN-->>Trader: Session with 1,000 allowance
+    User->>UI: 2. Trigger AI Agent
+    UI->>Agent: POST /api/agent (creditInfo)
+    Agent->>Agent: Analyze utilization vs thresholds
+    Agent-->>UI: { action: TOP_UP, amount: 10 }
+    UI->>ACT: agentTopUp(user, 10 USDC)
+    ACT-->>User: Margin restored ✓
     
-    Note over Trader,Agent: Trading activity (off-chain)
+    User->>UI: 3. Connect to Yellow Network
+    UI->>YN: WebSocket + Auth (EIP-712)
+    YN-->>User: Authenticated ✓
     
-    Agent->>YN: Monitor margin level
-    YN-->>Agent: Margin = 200 (LOW!)
+    User->>UI: 4. Create Payment Session
+    UI->>YN: createAppSessionMessage
+    YN-->>User: Session ID + allocations ✓
     
-    Agent->>YN: Instant off-chain top-up
-    YN-->>Trader: +800 USDC (< 100ms, $0 gas)
+    User->>UI: 5. Send Instant Transfer
+    UI->>YN: createTransferMessage
+    YN-->>User: Transfer confirmed (<100ms, $0 gas) ✓
     
-    Agent->>CCTP: Bridge 5,000 USDC
-    CCTP->>ACT: Mint USDC on Arc
+    User->>UI: 6. Bridge USDC from Sepolia
+    UI->>CCTP: depositForBurn on Sepolia
+    CCTP->>CCTP: Attestation (30-60s)
+    UI->>ACT: receiveMessage on Arc
+    ACT-->>User: USDC minted on Arc ✓
     
-    ACT->>Hook: commit(orderHash)
-    Hook->>Hook: Hide order details
-    ACT->>Hook: reveal(amount, salt)
-    Hook-->>ACT: Execute swap (MEV-protected)
-    
-    ACT-->>Trader: Credit line restored
+    User->>UI: 7. MEV-Protected Swap
+    UI->>Hook: commit(hash)
+    Hook-->>User: Commitment stored ✓
+    Note over Hook: Wait 1 block minimum
+    UI->>Hook: reveal(amount, nonce)
+    Hook-->>User: Reveal verified ✓
+    UI->>Hook: PoolManager.swap(key, params, REQUIRE_COMMIT)
+    Hook-->>User: Swap executed (MEV-protected) ✓
 ```
 
 ## Component Architecture
@@ -137,15 +159,18 @@ graph LR
 ```mermaid
 flowchart TD
     A[Trader deposits USDC] --> B[Arc Credit Terminal]
-    B --> C{Margin Check}
+    B --> C{LLM Agent Analyzes}
     C -->|Healthy| D[Continue Trading]
-    C -->|Low| E[Yellow State Channel]
-    E --> F[Instant Top-up]
-    F --> G[Circle CCTP Bridge]
-    G --> H[Uniswap v4 Hook]
-    H --> I[Hidden Swap Execution]
-    I --> J[Funds Restored]
-    J --> K[Credit Line Updated]
+    C -->|Low Margin| E[Agent Decision: TOP_UP]
+    E --> F[agentTopUp on-chain]
+    F --> G[Credit Line Updated]
+    B --> H[Yellow State Channel]
+    H --> I[Instant Off-chain Transfer]
+    B --> J[Circle CCTP Bridge]
+    J --> K[Cross-chain USDC]
+    B --> L[Uniswap v4 Hook]
+    L --> M[Commit → Reveal → Swap]
+    M --> N[MEV-Protected Execution]
 ```
 
 ## Technology Stack
@@ -158,6 +183,11 @@ mindmap
       Wagmi v2
       Viem
       TailwindCSS
+    AI Agent
+      OpenRouter API
+      Llama 3 8B
+      Next.js API Routes
+      JSON Structured Output
     Smart Contracts
       Arc Testnet
       Uniswap v4 Hooks
@@ -197,17 +227,16 @@ graph TB
         end
     end
 
-    subgraph "Backend Services"
-        B1[Margin Monitor Agent<br/>marginMonitor.js]
-        B2[CCTP Bridge Service<br/>cctpBridge.js]
+    subgraph "AI Agent (Server-side)"
+        B1[Next.js API Route<br/>/api/agent]
+        B3[OpenRouter LLM<br/>Llama 3 8B]
     end
 
     A1 <-->|CCTP| S1
     A2 --> A3
-    B1 --> Y1
+    B1 --> B3
+    B3 --> B1
     B1 --> A1
-    B2 --> S1
-    B2 --> A1
 ```
 
 ## Smart Contract Details
@@ -341,23 +370,48 @@ flowchart TB
 
 ## API Reference
 
-### Backend Services
+### LLM Agent API
 
-| Service | File | Purpose |
-|---------|------|---------|
-| Margin Monitor | `marginMonitor.js` | Yellow SDK integration, margin monitoring, auto top-up |
-| CCTP Bridge | `cctpBridge.js` | Cross-chain USDC bridging via Circle CCTP |
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/agent` | POST | Analyzes credit utilization and returns action decision |
+
+**Request Body:**
+```json
+{
+  "userAddress": "0x...",
+  "creditInfo": {
+    "deposited": "10000000",
+    "borrowed": "7000000",
+    "creditLimit": "10000000",
+    "available": "3000000"
+  }
+}
+```
+
+**Response:**
+```json
+{
+  "action": "TOP_UP",
+  "reason": "Utilization is 70%, exceeding safety threshold.",
+  "amount": "100"
+}
+```
+
+**LLM Provider:** [OpenRouter](https://openrouter.ai) → `meta-llama/llama-3-8b-instruct:free`
+
+**Fallback:** If no `OPENROUTER_API_KEY` is set, the agent uses a rule-based fallback (>50% utilization = TOP_UP).
 
 ### Environment Variables
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `PRIVATE_KEY` | Yes | Agent wallet private key |
-| `ARC_RPC_URL` | Yes | Arc testnet RPC endpoint |
-| `SEPOLIA_RPC_URL` | No | Sepolia RPC endpoint |
-| `YELLOW_WS_URL` | No | Yellow ClearNode WebSocket URL |
+| `OPENROUTER_API_KEY` | No* | OpenRouter API key for LLM agent |
+| `NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID` | Yes | WalletConnect project ID |
+
+*Agent works with rule-based fallback if no key is provided.
 
 ### Contract ABIs
 
-See `contracts/arc-credit/out/` for compiled ABIs after running `forge build`.
+All ABIs are embedded in `frontend/lib/contracts.ts` for zero-config deployment.
 
