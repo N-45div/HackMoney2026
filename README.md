@@ -80,38 +80,39 @@ graph TB
 
 ```mermaid
 sequenceDiagram
-    participant Trader
+    participant User
     participant UI as Web App
     participant ACT as ArcCreditTerminal
-    participant YN as Yellow Nitrolite
-    participant Agent as Margin Agent
+    participant YN as Yellow ClearNode
     participant CCTP as Circle CCTP
-    participant Hook as Uniswap v4 Hook
+    participant Hook as AntiSniperHook
 
-    Trader->>UI: Deposit 10,000 USDC
-    UI->>ACT: deposit(10000)
-    ACT-->>Trader: Credit line opened
+    User->>UI: 1. Deposit 10,000 USDC
+    UI->>ACT: depositToCreditLine(10000)
+    ACT-->>User: Credit line: 10,000 USDC
     
-    Trader->>YN: Open state channel
-    YN-->>Trader: Session with 1,000 allowance
+    User->>UI: 2. Connect to Yellow Network
+    UI->>YN: createAuthRequest + EIP-712 sign
+    YN-->>User: Authenticated 
+    User->>UI: 3. Create Payment Session
+    UI->>YN: createAppSessionMessage
+    YN-->>User: Session ID + allocations
     
-    Note over Trader,Agent: Trading activity (off-chain)
+    User->>UI: 4. Send Instant Transfer (10 USDC)
+    UI->>YN: createTransferMessage
+    YN-->>User: Transfer confirmed (<100ms, $0 gas)
     
-    Agent->>YN: Monitor margin level
-    YN-->>Agent: Margin = 200 (LOW!)
-    
-    Agent->>YN: Instant off-chain top-up
-    YN-->>Trader: +800 USDC (< 100ms, $0 gas)
-    
-    Agent->>CCTP: Bridge 5,000 USDC from Sepolia
-    CCTP->>ACT: Mint USDC on Arc
-    
-    ACT->>Hook: commit(orderHash)
-    Hook->>Hook: Hide order details
-    ACT->>Hook: reveal(amount, salt)
-    Hook-->>ACT: Execute swap (MEV-protected)
-    
-    ACT-->>Trader: Credit line restored
+    User->>UI: 5. Bridge from Sepolia
+    UI->>CCTP: depositForBurn on Sepolia
+    CCTP->>CCTP: Attestation (30-60s)
+    UI->>ACT: receiveMessage on Arc
+    ACT-->>User: USDC minted on Arc 
+    User->>UI: 6. MEV-Protected Order
+    UI->>Hook: commit(hash)
+    Hook-->>User: Commitment stored
+    Note over Hook: Wait 1 block
+    UI->>Hook: reveal(amount, nonce)
+    Hook-->>User: Reveal verified 
 ```
 
 ## Smart Contract Architecture
@@ -285,26 +286,46 @@ HackMoney2026/
 └── README.md
 ```
 
-## Quick Start
+## Quick Start (Judges & Demo)
+
+### Frontend Only (Recommended for Testing)
 
 ```bash
 # 1. Clone repository
 git clone https://github.com/N-45div/HackMoney2026.git
-cd HackMoney2026
+cd HackMoney2026/frontend
 
-# 2. Install backend dependencies
-cd backend && npm install
+# 2. Install dependencies
+npm install
 
-# 3. Configure environment
-cp .env.example .env
-# Edit .env with your private key
+# 3. Start development server
+npm run dev
 
-# 4. Run margin monitor agent
-npm start
-
-# 5. In another terminal, start frontend
-cd ../frontend && npm install && npm run dev
+# 4. Open http://localhost:3000 and connect your wallet
+# - Arc Testnet: Get USDC from faucet
+# - Sepolia: Get test ETH + USDC from faucets
 ```
+
+### Required Setup
+
+1. **Add Networks to MetaMask:**
+   - **Arc Testnet**: Chain ID `5042002`, RPC `https://rpc.testnet.arc.network`
+   - **Ethereum Sepolia**: Chain ID `11155111` (auto-configured by MetaMask)
+
+2. **Get Test Tokens:**
+   - Arc USDC: [Arc Testnet Faucet](https://testnet.arcscan.app/faucet)
+   - Sepolia ETH: [Sepolia Faucet](https://sepoliafaucet.com/)
+   - Sepolia USDC: Use contract `0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238`
+
+### What You Can Test
+
+| Tab | Feature | Networks |
+|-----|---------|----------|
+| **Deposit** | Deposit USDC → Get credit line | Arc Testnet |
+| **Borrow/Repay** | Borrow against deposit, repay debt | Arc Testnet |
+| **CCTP Bridge** | Bridge USDC Sepolia → Arc | Sepolia + Arc |
+| **Yellow Channel** | Off-chain instant transfers | Any (WebSocket) |
+| **MEV Shield** | Commit-reveal anti-frontrunning | Sepolia |
 
 ## Environment Variables
 
