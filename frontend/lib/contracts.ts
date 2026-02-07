@@ -1,4 +1,4 @@
-import { defineChain } from 'viem'
+import { defineChain, getAddress } from 'viem'
 import { baseSepolia, sepolia } from 'viem/chains'
 
 // Arc Testnet chain definition
@@ -29,28 +29,31 @@ export const SUPPORTED_CHAINS = [arcTestnet, baseSepolia, sepolia] as const
 
 // Arc Testnet contract addresses
 export const ARC_CONTRACTS = {
-  CREDIT_TERMINAL: '0xd1835d13A9694F0E9329FfDE9b18936CE872aae5' as const,
-  USDC: '0x3600000000000000000000000000000000000000' as const,
-  TOKEN_MESSENGER: '0xb43db544E2c27092c107639Ad201b3dEfAbcF192' as const,
-  MESSAGE_TRANSMITTER: '0x8FE6B999Dc680CcFDD5Bf7EB0974218be2542DAA' as const,
-} as const
+  CREDIT_TERMINAL: getAddress('0xd1835d13A9694F0E9329FfDE9b18936CE872aae5'),
+  USDC: getAddress('0x3600000000000000000000000000000000000000'),
+  TOKEN_MESSENGER: getAddress('0xb43db544E2c27092c107639Ad201b3dEfAbcF192'),
+  MESSAGE_TRANSMITTER: getAddress('0x8FE6B999Dc680CcFDD5Bf7EB0974218be2542DAA'),
+}
 
 // Base Sepolia contract addresses (Uniswap v4)
 export const BASE_SEPOLIA_CONTRACTS = {
-  POOL_MANAGER: '0x7Da1D65F8B249183667cdE74C5CBD46dD38AA829' as const,
-  USDC: '0x036CbD53842c5426634e7929541eC2318f3dCF7e' as const,
-  TOKEN_MESSENGER: '0x9f3B8679c73C2Fef8b59B4F3444d4e156fb70AA5' as const,
-  MESSAGE_TRANSMITTER: '0x7865fAfC2db2093669d92c0f33AeEF291086BEFD' as const,
-  // AntiSniperHook will be deployed here - placeholder until deployed
-  ANTI_SNIPER_HOOK: '0x0000000000000000000000000000000000000000' as const,
-} as const
+  POOL_MANAGER: getAddress('0x7Da1D65F8B249183667cdE74C5CBD46dD38AA829'),
+  USDC: getAddress('0x036CbD53842c5426634e7929541eC2318f3dCF7e'),
+  TOKEN_MESSENGER: getAddress('0x9f3B8679c73C2Fef8b59B4f3444d4e156fb70AA5'),
+  MESSAGE_TRANSMITTER: getAddress('0x7865fAfC2db2093669d92c0f33AeEF291086BEFD'),
+  ANTI_SNIPER_HOOK: getAddress('0x0A3b821941789AC5Ff334AB6C374bb23C98540c0'),
+}
 
 // Ethereum Sepolia contract addresses
 export const SEPOLIA_CONTRACTS = {
-  USDC: '0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238' as const,
-  TOKEN_MESSENGER: '0x9f3B8679c73C2Fef8b59B4F3444d4e156fb70AA5' as const,
-  MESSAGE_TRANSMITTER: '0x7865fAfC2db2093669d92c0f33AeEF291086BEFD' as const,
-} as const
+  USDC: getAddress('0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238'),
+  TOKEN_MESSENGER: getAddress('0x9f3B8679c73C2Fef8b59B4f3444d4e156fb70AA5'),
+  MESSAGE_TRANSMITTER: getAddress('0x7865fAfC2db2093669d92c0f33AeEF291086BEFD'),
+  ANTI_SNIPER_HOOK: getAddress('0x0A3b821941789AC5Ff334AB6C374bb23C98540c0'),
+  POOL_MANAGER: getAddress('0xE03A1074c86CFeDd5C142C4F04F1a1536e203543'),
+  // ETH/USDC pool initialized with AntiSniperHook (fee: 3000, tickSpacing: 60)
+  POOL_ID: '0x825ea185f9e0f7b8902b4298b2b8f600e95afcedb8e81b1da6cc5025103763e5' as const,
+}
 
 // Legacy export for backward compatibility
 export const CONTRACTS = ARC_CONTRACTS
@@ -58,6 +61,8 @@ export const CONTRACTS = ARC_CONTRACTS
 // Deployment transaction links
 export const DEPLOYMENT_TX = {
   ARC_CREDIT_TERMINAL: 'https://testnet.arcscan.app/tx/0xf30bfc37a23013a8f68d2b5375f5f5b19ddc5934b889923d91ba91462b61970f',
+  ANTI_SNIPER_HOOK: 'https://sepolia.etherscan.io/tx/0x3f495bb7d3b34ae58d1165bd1941083455afa28e89313463e13a10479247cebd',
+  POOL_INIT: 'https://sepolia.etherscan.io/tx/0x77e97d786e38e1665c5cce44a8c3b24daffe953069d4497042f36ce1e4c182a3',
 } as const
 
 // CCTP Domain IDs
