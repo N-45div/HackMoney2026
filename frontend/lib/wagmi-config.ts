@@ -20,7 +20,7 @@ export const networks = [arcTestnet, baseSepolia, sepolia]
 export const wagmiAdapter = new WagmiAdapter({
   networks,
   projectId,
-  ssr: true,
+  ssr: false,
   storage: createStorage({
     storage: cookieStorage,
   }),

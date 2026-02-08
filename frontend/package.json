@@ -10,9 +10,11 @@
   },
   "dependencies": {
     "@coinbase/wallet-sdk": "^4.3.7",
+    "@solana/kit": "^5.1.0",
     "@tanstack/react-query": "^5.90.20",
     "@reown/appkit": "^1.8.17",
     "@reown/appkit-adapter-wagmi": "^1.8.17",
+    "axios": "^1.7.2",
     "framer-motion": "^12.33.0",
     "lucide-react": "^0.563.0",
     "next": "^16.1.6",
