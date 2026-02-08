@@ -27,15 +27,56 @@ export { baseSepolia, sepolia }
 // All supported chains
 export const SUPPORTED_CHAINS = [arcTestnet, baseSepolia, sepolia] as const
 
+// Uniswap v4 helper router ABI (PoolSwapTest on Sepolia)
+export const POOL_SWAP_TEST_ABI = [
+  {
+    inputs: [
+      {
+        name: 'key',
+        type: 'tuple',
+        components: [
+          { name: 'currency0', type: 'address' },
+          { name: 'currency1', type: 'address' },
+          { name: 'fee', type: 'uint24' },
+          { name: 'tickSpacing', type: 'int24' },
+          { name: 'hooks', type: 'address' },
+        ],
+      },
+      {
+        name: 'params',
+        type: 'tuple',
+        components: [
+          { name: 'zeroForOne', type: 'bool' },
+          { name: 'amountSpecified', type: 'int256' },
+          { name: 'sqrtPriceLimitX96', type: 'uint160' },
+        ],
+      },
+      {
+        name: 'testSettings',
+        type: 'tuple',
+        components: [
+          { name: 'takeClaims', type: 'bool' },
+          { name: 'settleUsingBurn', type: 'bool' },
+        ],
+      },
+      { name: 'hookData', type: 'bytes' },
+    ],
+    name: 'swap',
+    outputs: [{ name: 'delta', type: 'int256' }],
+    stateMutability: 'payable',
+    type: 'function',
+  },
+] as const
+
 // Arc Testnet contract addresses
 export const ARC_CONTRACTS = {
   CREDIT_TERMINAL: getAddress('0xd1835d13A9694F0E9329FfDE9b18936CE872aae5'),
   USDC: getAddress('0x3600000000000000000000000000000000000000'),
   TOKEN_MESSENGER: getAddress('0xb43db544E2c27092c107639Ad201b3dEfAbcF192'),
-  MESSAGE_TRANSMITTER: getAddress('0x8FE6B999Dc680CcFDD5Bf7EB0974218be2542DAA'),
+  MESSAGE_TRANSMITTER: getAddress('0xE737e5cEBEEBa77EFE34D4aa090756590b1CE275'), // V2 MessageTransmitterV2 on Arc Testnet
 }
 
-// Base Sepolia contract addresses (Uniswap v4)
+// Ethereum Sepolia contract addresses (Uniswap v4)
 export const BASE_SEPOLIA_CONTRACTS = {
   POOL_MANAGER: getAddress('0x7Da1D65F8B249183667cdE74C5CBD46dD38AA829'),
   USDC: getAddress('0x036CbD53842c5426634e7929541eC2318f3dCF7e'),
@@ -47,10 +88,12 @@ export const BASE_SEPOLIA_CONTRACTS = {
 // Ethereum Sepolia contract addresses
 export const SEPOLIA_CONTRACTS = {
   USDC: getAddress('0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238'),
-  TOKEN_MESSENGER: getAddress('0x9f3B8679c73C2Fef8b59B4f3444d4e156fb70AA5'),
+  TOKEN_MESSENGER: getAddress('0x8FE6B999Dc680CcFDD5Bf7EB0974218be2542DAA'), // V2 TokenMessengerV2 on Ethereum Sepolia
   MESSAGE_TRANSMITTER: getAddress('0x7865fAfC2db2093669d92c0f33AeEF291086BEFD'),
   ANTI_SNIPER_HOOK: getAddress('0x0A3b821941789AC5Ff334AB6C374bb23C98540c0'),
   POOL_MANAGER: getAddress('0xE03A1074c86CFeDd5C142C4F04F1a1536e203543'),
+  // Uniswap v4 helper router (implements unlockCallback flow)
+  POOL_SWAP_TEST: getAddress('0x9B6b46e2c869aa39918Db7f52f5557FE577B6eEe'),
   // ETH/USDC pool initialized with AntiSniperHook (fee: 3000, tickSpacing: 60)
   POOL_ID: '0x825ea185f9e0f7b8902b4298b2b8f600e95afcedb8e81b1da6cc5025103763e5' as const,
 }
@@ -65,11 +108,11 @@ export const DEPLOYMENT_TX = {
   POOL_INIT: 'https://sepolia.etherscan.io/tx/0x77e97d786e38e1665c5cce44a8c3b24daffe953069d4497042f36ce1e4c182a3',
 } as const
 
-// CCTP Domain IDs
+// CCTP Domain IDs (per Circle docs)
 export const CCTP_DOMAINS = {
-  ETHEREUM: 0,
-  BASE: 6,
-  ARC: 10,
+  ETHEREUM: 0,  // Ethereum Sepolia
+  BASE: 6,      // Ethereum Sepolia
+  ARC: 26,      // Arc Testnet
 } as const
 
 /**
@@ -352,7 +395,7 @@ export const ERC20_ABI = [
 ] as const
 
 // AntiSniperHook ABI - Generated from contracts/uniswap-hook/src/AntiSniperHook.sol
-// Deployed on Base Sepolia for MEV-protected swaps
+// Deployed on Ethereum Sepolia for MEV-protected swaps
 export const ANTI_SNIPER_HOOK_ABI = [
   {
     inputs: [{ name: '_poolManager', type: 'address', internalType: 'contract IPoolManager' }],

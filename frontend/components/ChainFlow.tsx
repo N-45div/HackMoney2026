@@ -26,7 +26,7 @@ export default function ChainFlow() {
         />
         <FlowArrow delay={0.2} label="CCTP" />
         <ChainNode
-          name="Base Sepolia"
+          name="Ethereum Sepolia"
           role="Uniswap v4"
           color="blue"
           icon="🔷"

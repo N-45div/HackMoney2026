@@ -2,7 +2,13 @@
 
 import { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
-import { parseUnits, formatUnits, createPublicClient, http, keccak256, pad } from 'viem'
+import {
+  parseUnits,
+  formatUnits,
+  createPublicClient,
+  http,
+  pad,
+} from 'viem'
 import { sepolia } from 'viem/chains'
 import { useWalletClient, useSwitchChain } from 'wagmi'
 import {
@@ -26,6 +32,7 @@ interface CCTPBridgeProps {
   address: string
 }
 
+// CCTP V2 TokenMessengerV2 ABI
 const TOKEN_MESSENGER_ABI = [
   {
     inputs: [
@@ -33,9 +40,12 @@ const TOKEN_MESSENGER_ABI = [
       { name: 'destinationDomain', type: 'uint32' },
       { name: 'mintRecipient', type: 'bytes32' },
       { name: 'burnToken', type: 'address' },
+      { name: 'destinationCaller', type: 'bytes32' },
+      { name: 'maxFee', type: 'uint256' },
+      { name: 'minFinalityThreshold', type: 'uint32' },
     ],
     name: 'depositForBurn',
-    outputs: [{ name: 'nonce', type: 'uint64' }],
+    outputs: [],
     stateMutability: 'nonpayable',
     type: 'function',
   },
@@ -54,7 +64,8 @@ const MESSAGE_TRANSMITTER_ABI = [
   },
 ] as const
 
-const ATTESTATION_API = 'https://iris-api-sandbox.circle.com'
+// CCTP V2 attestation API
+const ATTESTATION_API = 'https://iris-api-sandbox.circle.com/v2'
 
 const sepoliaClient = createPublicClient({
   chain: sepolia,
@@ -150,6 +161,11 @@ export default function CCTPBridge({ address }: CCTPBridgeProps) {
       setStatus('burning')
       const mintRecipient = pad(address as `0x${string}`, { size: 32 })
 
+      // CCTP V2: depositForBurn with 7 params
+      const ZERO_BYTES32 = '0x0000000000000000000000000000000000000000000000000000000000000000' as `0x${string}`
+      const maxFee = 500n // 0.0005 USDC max fee
+      const minFinalityThreshold = 1000 // 1000 or less = Fast Transfer
+
       const burnHash = await walletClient.writeContract({
         address: SEPOLIA_CONTRACTS.TOKEN_MESSENGER,
         abi: TOKEN_MESSENGER_ABI,
@@ -159,6 +175,9 @@ export default function CCTPBridge({ address }: CCTPBridgeProps) {
           CCTP_DOMAINS.ARC,
           mintRecipient,
           SEPOLIA_CONTRACTS.USDC,
+          ZERO_BYTES32,        // destinationCaller (0x0 = any caller)
+          maxFee,              // max fee in USDC subunits
+          minFinalityThreshold, // fast transfer threshold
         ],
         chain: sepolia,
         account: address as `0x${string}`,
@@ -169,59 +188,51 @@ export default function CCTPBridge({ address }: CCTPBridgeProps) {
         hash: burnHash,
       })
 
-      // Step 3: Extract message hash from logs
-      // MessageSent event topic
-      const messageSentTopic = keccak256(
-        new TextEncoder().encode('MessageSent(bytes)')
-      ) as `0x${string}`
-
-      const messageLog = burnReceipt.logs.find(
-        (log) => log.topics[0] === messageSentTopic
-      )
-
-      let messageHash: string
-      let messageBytes: `0x${string}`
-
-      if (messageLog) {
-        // Decode message bytes from the event
-        const decoded = messageLog.data
-        messageBytes = decoded as `0x${string}`
-        messageHash = keccak256(messageBytes)
-      } else {
-        // Fallback: use the raw log data from the first relevant log
-        const fallbackLog = burnReceipt.logs[burnReceipt.logs.length - 1]
-        messageBytes = fallbackLog.data as `0x${string}`
-        messageHash = keccak256(messageBytes)
-      }
-
-      // Step 4: Poll Circle attestation API
+      // Step 3 & 4: Poll Circle V2 attestation API using transaction hash
+      // V2 endpoint: GET /v2/messages/{sourceDomain}?transactionHash={txHash}
       setStatus('waiting_attestation')
-      const hashForApi = messageHash.startsWith('0x')
-        ? messageHash.slice(2)
-        : messageHash
+      const sourceDomain = CCTP_DOMAINS.ETHEREUM // Sepolia = domain 0
 
       let attestation: string | null = null
-      const maxAttempts = 90 // 15 minutes at 10s intervals
+      let messageBytes: `0x${string}` | null = null
+      const maxAttempts = 90 // 15 minutes at 5s intervals
+      const apiUrl = `${ATTESTATION_API}/messages/${sourceDomain}?transactionHash=${burnHash}`
+      console.log('[CCTP] Polling V2 attestation API:', apiUrl)
+      
       for (let i = 0; i < maxAttempts; i++) {
         setAttestationProgress(Math.min(((i + 1) / 30) * 100, 95))
         try {
-          const resp = await fetch(
-            `${ATTESTATION_API}/attestations/${hashForApi}`
-          )
-          if (resp.ok) {
-            const data = await resp.json()
-            if (data.status === 'complete' && data.attestation) {
-              attestation = data.attestation
+          const resp = await fetch(apiUrl)
+          console.log(`[CCTP] Poll ${i + 1}: status=${resp.status}`)
+          
+          if (!resp.ok) {
+            if (resp.status !== 404) {
+              const text = await resp.text().catch(() => '')
+              console.log(`[CCTP] Non-OK response: ${resp.status} ${text.slice(0, 200)}`)
+            }
+            await new Promise((r) => setTimeout(r, 5000))
+            continue
+          }
+
+          const data = await resp.json()
+          console.log('[CCTP] Response:', JSON.stringify(data).slice(0, 500))
+          
+          if (data.messages && data.messages.length > 0) {
+            const msg = data.messages[0]
+            if (msg.status === 'complete' && msg.attestation) {
+              attestation = msg.attestation
+              messageBytes = msg.message as `0x${string}`
+              console.log('[CCTP] Attestation received!')
               break
             }
           }
-        } catch {
-          // continue polling
+        } catch (err) {
+          console.log('[CCTP] Poll error:', err)
         }
-        await new Promise((r) => setTimeout(r, 10000))
+        await new Promise((r) => setTimeout(r, 5000))
       }
 
-      if (!attestation) {
+      if (!attestation || !messageBytes) {
         throw new Error(
           'Attestation timeout — Circle may take a few minutes. Try again later.'
         )

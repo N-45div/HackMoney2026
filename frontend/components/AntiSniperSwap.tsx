@@ -19,7 +19,8 @@ import {
 import {
   SEPOLIA_CONTRACTS,
   ANTI_SNIPER_HOOK_ABI,
-  POOL_MANAGER_ABI,
+  POOL_SWAP_TEST_ABI,
+  ERC20_ABI,
 } from '../lib/contracts'
 
 interface AntiSniperSwapProps {
@@ -45,6 +46,10 @@ export default function AntiSniperSwap({ address }: AntiSniperSwapProps) {
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
   const [nonce, setNonce] = useState<bigint>(0n)
   const [commitHash, setCommitHash] = useState<string | null>(null)
+
+  // Uniswap v3/v4 TickMath compatible bounds
+  const MIN_SQRT_RATIO = 4295128739n
+  const MAX_SQRT_RATIO = 1461446703485210103287273052203988822378723970342n
 
   // Real PoolKey for the ETH/USDC pool initialized on Sepolia with AntiSniperHook
   const POOL_KEY = {
@@ -157,22 +162,50 @@ export default function AntiSniperSwap({ address }: AntiSniperSwapProps) {
 
       const swapAmount = parseUnits(amount, 6)
 
+      // Ensure PoolManager can pull USDC for settlement during unlockCallback.
+      // (PoolSwapTest triggers PoolManager settlement logic under the hood.)
+      const allowance = await sepoliaClient.readContract({
+        address: SEPOLIA_CONTRACTS.USDC,
+        abi: ERC20_ABI,
+        functionName: 'allowance',
+        args: [address as `0x${string}`, SEPOLIA_CONTRACTS.POOL_MANAGER],
+      })
+
+      if (allowance < swapAmount) {
+        const approveHash = await walletClient.writeContract({
+          address: SEPOLIA_CONTRACTS.USDC,
+          abi: ERC20_ABI,
+          functionName: 'approve',
+          args: [SEPOLIA_CONTRACTS.POOL_MANAGER, swapAmount],
+          chain: sepolia,
+          account: address as `0x${string}`,
+        })
+        await sepoliaClient.waitForTransactionReceipt({ hash: approveHash })
+      }
+
       // Prepare swap parameters
       const swapParams = {
         zeroForOne: false, // USDC -> ETH (currency1 -> currency0)
-        amountSpecified: BigInt(swapAmount), // Exact input
-        sqrtPriceLimitX96: 0n, // No price limit
+        // Exact input uses negative amountSpecified in v4
+        amountSpecified: -BigInt(swapAmount),
+        // Use a valid sqrtPriceLimitX96 bound
+        sqrtPriceLimitX96: MAX_SQRT_RATIO - 1n,
       }
 
       // hookData with REQUIRE_COMMIT to enforce commit-reveal check
       const hookData = '0x5245515549524520434f4d4d4954' // "REQUIRE_COMMIT" in hex
 
-      // Execute swap through PoolManager
+      const testSettings = {
+        takeClaims: false,
+        settleUsingBurn: false,
+      }
+
+      // Execute swap through PoolSwapTest (handles PoolManager.unlock + unlockCallback)
       const txHash = await walletClient.writeContract({
-        address: SEPOLIA_CONTRACTS.POOL_MANAGER,
-        abi: POOL_MANAGER_ABI,
+        address: SEPOLIA_CONTRACTS.POOL_SWAP_TEST,
+        abi: POOL_SWAP_TEST_ABI,
         functionName: 'swap',
-        args: [POOL_KEY, swapParams, hookData],
+        args: [POOL_KEY, swapParams, testSettings, hookData],
         chain: sepolia,
         account: address as `0x${string}`,
       })
@@ -183,7 +216,15 @@ export default function AntiSniperSwap({ address }: AntiSniperSwapProps) {
       setStep('complete')
     } catch (err) {
       console.error('Swap failed:', err)
-      setErrorMsg(err instanceof Error ? err.message : 'Swap execution failed')
+      const msg = err instanceof Error ? err.message : 'Swap execution failed'
+      if (
+        msg.toLowerCase().includes('user rejected') ||
+        msg.toLowerCase().includes('user denied')
+      ) {
+        setErrorMsg('Transaction cancelled in wallet.')
+      } else {
+        setErrorMsg(msg)
+      }
       setStep('error')
     } finally {
       setLoading(false)

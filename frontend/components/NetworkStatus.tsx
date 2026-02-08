@@ -13,7 +13,7 @@ interface NetworkInfo {
 
 const NETWORKS: NetworkInfo[] = [
   { name: 'Arc Testnet', chainId: 5042002, status: 'connected', latency: 45 },
-  { name: 'Base Sepolia', chainId: 84532, status: 'connected', latency: 32 },
+  { name: 'Ethereum Sepolia', chainId: 11155111, status: 'connected', latency: 32 },
   { name: 'Yellow Network', chainId: 0, status: 'connected', latency: 12 },
 ]
 

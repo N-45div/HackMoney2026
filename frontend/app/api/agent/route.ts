@@ -58,7 +58,7 @@ Respond with a JSON object ONLY:
         "X-Title": "NitroBridge Vault", // Optional: Site title for rankings
       },
       body: JSON.stringify({
-        "model": "meta-llama/llama-3-8b-instruct:free",
+        "model": "nvidia/nemotron-nano-9b-v2:free",
         "messages": [
           {
             "role": "system", 
@@ -71,19 +71,49 @@ Respond with a JSON object ONLY:
     });
 
     const data = await response.json()
+    
+    // Handle OpenRouter API errors
+    if (!response.ok || data.error) {
+      console.error('OpenRouter API error:', data.error || response.statusText)
+      // Fallback to rule-based on API error
+      const action = utilization > 50 ? "TOP_UP" : "MONITOR"
+      return NextResponse.json({
+        action,
+        reason: `LLM unavailable — rule-based fallback. Utilization is ${utilization}%.`,
+        amount: utilization > 50 ? "10" : "0",
+        source: "fallback"
+      })
+    }
+
+    // Validate response structure
+    if (!data.choices || !data.choices.length || !data.choices[0]?.message?.content) {
+      console.error('Unexpected OpenRouter response:', JSON.stringify(data).slice(0, 500))
+      const action = utilization > 50 ? "TOP_UP" : "MONITOR"
+      return NextResponse.json({
+        action,
+        reason: `LLM returned unexpected format — rule-based fallback. Utilization is ${utilization}%.`,
+        amount: utilization > 50 ? "10" : "0",
+        source: "fallback"
+      })
+    }
+
     const content = data.choices[0].message.content
     
     // Parse JSON from LLM response (handling potential markdown code blocks)
-    const jsonStr = content.replace(/```json\n|\n```/g, '').trim()
+    const jsonStr = content.replace(/```json\n?|\n?```/g, '').trim()
     const decision = JSON.parse(jsonStr)
+    decision.source = "llm"
 
     return NextResponse.json(decision)
 
   } catch (error) {
     console.error('Agent Error:', error)
-    return NextResponse.json(
-      { error: 'Agent failed to analyze' },
-      { status: 500 }
-    )
+    // Always return a valid response, never 500
+    return NextResponse.json({
+      action: "MONITOR",
+      reason: "Agent encountered an error. Defaulting to monitor.",
+      amount: "0",
+      source: "error-fallback"
+    })
   }
 }

@@ -398,7 +398,7 @@ flowchart TB
 }
 ```
 
-**LLM Provider:** [OpenRouter](https://openrouter.ai) → `meta-llama/llama-3-8b-instruct:free`
+**LLM Provider:** [OpenRouter](https://openrouter.ai) → `nvidia/nemotron-nano-9b-v2:free`
 
 **Fallback:** If no `OPENROUTER_API_KEY` is set, the agent uses a rule-based fallback (>50% utilization = TOP_UP).
 
