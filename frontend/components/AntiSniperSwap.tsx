@@ -46,6 +46,9 @@ export default function AntiSniperSwap({ address }: AntiSniperSwapProps) {
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
   const [nonce, setNonce] = useState<bigint>(0n)
   const [commitHash, setCommitHash] = useState<string | null>(null)
+  const [commitBlock, setCommitBlock] = useState<bigint>(0n)
+  const [waitingForBlock, setWaitingForBlock] = useState(false)
+  const [blocksRemaining, setBlocksRemaining] = useState(0)
 
   // Uniswap v3/v4 TickMath compatible bounds
   const MIN_SQRT_RATIO = 4295128739n
@@ -100,9 +103,35 @@ export default function AntiSniperSwap({ address }: AntiSniperSwapProps) {
       })
       setCommitTxHash(txHash)
 
-      await sepoliaClient.waitForTransactionReceipt({ hash: txHash })
+      const receipt = await sepoliaClient.waitForTransactionReceipt({ hash: txHash })
 
+      // Store commit block and wait for MIN_COMMITMENT_AGE (1 block) before enabling reveal
+      const commitBlockNum = receipt.blockNumber
+      setCommitBlock(commitBlockNum)
       setStep('committed')
+      setWaitingForBlock(true)
+      setBlocksRemaining(1)
+
+      // Poll until at least 1 new block has passed
+      const waitForBlock = async () => {
+        const targetBlock = commitBlockNum + 1n
+        while (true) {
+          try {
+            const current = await sepoliaClient.getBlockNumber()
+            const remaining = Number(targetBlock - current)
+            if (remaining <= 0) {
+              setWaitingForBlock(false)
+              setBlocksRemaining(0)
+              break
+            }
+            setBlocksRemaining(remaining)
+          } catch {
+            // retry
+          }
+          await new Promise(r => setTimeout(r, 4000))
+        }
+      }
+      waitForBlock()
     } catch (err) {
       console.error('Commit failed:', err)
       setErrorMsg(err instanceof Error ? err.message : 'Commit failed')
@@ -240,6 +269,9 @@ export default function AntiSniperSwap({ address }: AntiSniperSwapProps) {
     setErrorMsg(null)
     setNonce(0n)
     setCommitHash(null)
+    setCommitBlock(0n)
+    setWaitingForBlock(false)
+    setBlocksRemaining(0)
   }
 
   return (
@@ -352,29 +384,47 @@ export default function AntiSniperSwap({ address }: AntiSniperSwapProps) {
             )}
           </motion.button>
         ) : step === 'committed' ? (
-          <motion.button
-            onClick={handleReveal}
-            disabled={loading}
-            whileHover={{ scale: loading ? 1 : 1.01 }}
-            whileTap={{ scale: loading ? 1 : 0.99 }}
-            className={`w-full py-4 rounded-xl font-semibold text-sm transition-all flex items-center justify-center gap-2 ${
-              loading
-                ? 'bg-white/[0.04] text-slate-600 cursor-not-allowed'
-                : 'btn-primary'
-            }`}
-          >
-            {loading ? (
-              <>
-                <Loader2 className="w-4 h-4 animate-spin" />
-                <span>Revealing...</span>
-              </>
-            ) : (
-              <>
-                <Unlock className="w-4 h-4 relative z-10" />
-                <span className="relative z-10">Reveal & Execute Swap</span>
-              </>
+          <>
+            {waitingForBlock && (
+              <div className="p-3 rounded-xl bg-amber-500/[0.06] border border-amber-500/10">
+                <div className="flex items-center gap-2 text-amber-400">
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  <span className="text-xs font-medium">
+                    Waiting for {blocksRemaining} block{blocksRemaining !== 1 ? 's' : ''} before reveal (~{blocksRemaining * 12}s)
+                  </span>
+                </div>
+                <p className="text-[10px] text-amber-400/60 mt-1">The contract requires at least 1 block between commit and reveal for MEV protection.</p>
+              </div>
             )}
-          </motion.button>
+            <motion.button
+              onClick={handleReveal}
+              disabled={loading || waitingForBlock}
+              whileHover={{ scale: loading || waitingForBlock ? 1 : 1.01 }}
+              whileTap={{ scale: loading || waitingForBlock ? 1 : 0.99 }}
+              className={`w-full py-4 rounded-xl font-semibold text-sm transition-all flex items-center justify-center gap-2 ${
+                loading || waitingForBlock
+                  ? 'bg-white/[0.04] text-slate-600 cursor-not-allowed'
+                  : 'btn-primary'
+              }`}
+            >
+              {loading ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span>Revealing...</span>
+                </>
+              ) : waitingForBlock ? (
+                <>
+                  <Lock className="w-4 h-4" />
+                  <span>Waiting for block confirmation...</span>
+                </>
+              ) : (
+                <>
+                  <Unlock className="w-4 h-4 relative z-10" />
+                  <span className="relative z-10">Reveal & Execute Swap</span>
+                </>
+              )}
+            </motion.button>
+          </>
         ) : step === 'revealed' ? (
           <motion.button
             onClick={handleSwap}

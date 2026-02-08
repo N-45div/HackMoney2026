@@ -1,6 +1,8 @@
 # NitroBridge Vault
 
-> **Instant cross-chain margin refills with sub-second state channel settlements and MEV-protected execution**
+> **Revolving credit line with instant cross-chain margin refills, MEV-protected swaps, and off-chain metering — all from the browser.**
+
+**Live:** [nitrobridgedev.vercel.app](https://nitrobridgedev.vercel.app)
 
 ## The Problem
 
@@ -8,370 +10,196 @@ Traders with capital across multiple chains face catastrophic margin calls:
 
 | Pain Point | Current Reality | Impact |
 |------------|-----------------|--------|
-| **Bridge Latency** | 5-15 minute finality | Position liquidated before funds arrive |
-| **MEV Extraction** | Public refill signals | Bots frontrun, increasing costs 2-5% |
-| **Fragmented Liquidity** | USDC on wrong chain | Manual bridging, multiple gas tokens |
+| **Bridge Latency** | 5–15 min finality | Liquidated before funds arrive |
+| **MEV Extraction** | Public refill signals | Bots frontrun, +2–5% slippage |
+| **Fragmented Liquidity** | USDC on the wrong chain | Manual bridging, multiple gas tokens |
 | **No Credit Memory** | Every tx starts fresh | Perfect repayers treated like new users |
-
-**A $50,000 margin call with 5-minute bridge time = guaranteed liquidation.**
 
 ## The Solution
 
-NitroBridge Vault combines three breakthrough technologies:
+NitroBridge Vault is a **fully client-side Next.js dApp** (no backend server) that combines:
+
+- **Arc Testnet** — on-chain revolving credit (deposit, borrow, agent top-up)
+- **Yellow Network** — off-chain state channels for instant metering & settlement via ERC-7824 Nitrolite SDK
+- **Uniswap v4** — custom `AntiSniperHook` with commit-reveal MEV protection
+- **Circle CCTP v2** — native USDC bridging between Ethereum Sepolia and Arc Testnet
+- **AI Risk Agent** — LLM-powered credit analysis via a Next.js API route (`/api/agent`)
+
+Everything runs in the browser (wagmi + viem) or in Next.js edge functions. There is no separate backend process.
+
+## Architecture
 
 ```mermaid
 graph TB
-    subgraph "Integration Layer"
-        Y[Yellow Nitrolite<br/>State Channels<br/>⚡ <100ms, Zero gas]
-        C[Circle CCTP<br/>Native USDC Bridge<br/>🌉 Sepolia ↔ Arc]
-        U[Uniswap v4 Hooks<br/>Commit-Reveal<br/>🔒 MEV Protection]
+    subgraph Frontend["Next.js Frontend (Vercel)"]
+        CD[Credit Dashboard<br/>+ AI Agent]
+        DEP[Deposit / Borrow / Repay]
+        CCTP[CCTP Bridge<br/>Sepolia → Arc]
+        YC[Yellow Channel<br/>Auth + Sessions + Metering]
+        MEV[AntiSniper Swap<br/>Commit-Reveal-Swap]
+        API["/api/agent<br/>(OpenRouter LLM)"]
     end
-    
-    subgraph "Core Protocol"
-        ACT[ArcCreditTerminal<br/>Revolving Credit<br/>Agent-Authorized<br/>Auto-Refill]
-    end
-    
-    Y --> ACT
-    C --> ACT
-    U --> ACT
-```
 
-## Architecture Overview
+    subgraph Arc["Arc Testnet (5042002)"]
+        ACT[ArcCreditTerminal.sol]
+        USDC_A[USDC]
+        CCTP_A[CCTP Contracts]
+    end
 
-```mermaid
-graph TB
-    subgraph "Presentation Layer"
-        UI[Next.js + wagmi]
-        CD[Credit Dashboard]
-        MT[Margin Top-Up]
-        BM[Bridge Monitor]
+    subgraph Sepolia["Ethereum Sepolia (11155111)"]
+        HOOK[AntiSniperHook]
+        PM[PoolManager v4]
+        PST[PoolSwapTest]
+        CCTP_S[CCTP Contracts]
     end
-    
-    subgraph "Smart Contracts - Arc Testnet"
-        ACT[ArcCreditTerminal.sol<br/>0xd1835d13A9694F0E9329FfDE9b18936CE872aae5]
-        ASH[AntiSniperHook.sol<br/>Uniswap v4]
+
+    subgraph Yellow["Yellow ClearNode"]
+        WS["wss://clearnet-sandbox<br/>.yellow.com/ws"]
+        SC[ERC-7824 State Channels]
     end
-    
-    subgraph "Backend Services"
-        MM[Margin Monitor Agent<br/>marginMonitor.js]
-        CB[CCTP Bridge Service<br/>cctpBridge.js]
-    end
-    
-    subgraph "External Protocols"
-        YN[Yellow ClearNode<br/>wss://clearnet-sandbox.yellow.com]
-        CCTP[Circle CCTP<br/>Sepolia ↔ Arc]
-        V4[Uniswap v4<br/>PoolManager]
-    end
-    
-    UI --> CD
-    UI --> MT
-    UI --> BM
+
+    CD --> API
     CD --> ACT
-    MT --> MM
-    BM --> CB
-    MM --> YN
-    MM --> ACT
-    CB --> CCTP
-    ACT --> ASH
-    ASH --> V4
-    LLM --> ACT
-```
-
-## Transaction Flow
-
-```mermaid
-sequenceDiagram
-    participant User
-    participant UI as Web App
-    participant LLM as OpenRouter Agent
-    participant ACT as ArcCreditTerminal
-    participant YN as Yellow ClearNode
-    participant CCTP as Circle CCTP
-    participant Hook as AntiSniperHook
-
-    User->>UI: 1. Deposit 10,000 USDC
-    UI->>ACT: depositToCreditLine(10000)
-    ACT-->>User: Credit line: 10,000 USDC
-    
-    User->>UI: 2. Trigger AI Agent
-    UI->>LLM: Analyze(utilization, limit)
-    LLM-->>UI: { action: "TOP_UP", amount: "10" }
-    UI->>ACT: agentTopUp(user, 10 USDC)
-    ACT-->>User: Margin restored (Agentic Action) 
-    
-    User->>UI: 3. Connect to Yellow Network
-    UI->>YN: createAuthRequest + EIP-712 sign
-    YN-->>User: Authenticated 
-    
-    User->>UI: 4. Create Payment Session
-    UI->>YN: createAppSessionMessage
-    YN-->>User: Session ID + allocations
-    
-    User->>UI: 5. Send Instant Transfer
-    UI->>YN: createTransferMessage
-    YN-->>User: Transfer confirmed (<100ms, $0 gas)
-    
-    User->>UI: 6. Bridge USDC from Sepolia
-    UI->>CCTP: depositForBurn on Sepolia
-    CCTP->>CCTP: Attestation (30-60s)
-    UI->>ACT: receiveMessage on Arc
-    ACT-->>User: USDC minted on Arc 
-    
-    User->>UI: 7. MEV-Protected Order
-    UI->>Hook: commit(hash)
-    Hook-->>User: Commitment stored 
-    Note over Hook: Wait 1 block minimum
-    UI->>Hook: reveal(amount, nonce)
-    Hook-->>User: Reveal verified 
-```
-
-## Smart Contract Architecture
-
-```mermaid
-classDiagram
-    class ArcCreditTerminal {
-        +IERC20 usdc
-        +mapping creditLines
-        +mapping authorizedAgents
-        +deposit(amount)
-        +borrow(amount)
-        +agentTopUp(user, amount)
-        +settleCredit(amount)
-        +receiveCCTP(amount, messageHash)
-    }
-    
-    class AntiSniperHook {
-        +mapping commitments
-        +uint256 commitDeadline
-        +commit(hash)
-        +reveal(amount, salt)
-        +beforeSwap(key, params)
-        +afterSwap(key, params, delta)
-    }
-    
-    class CreditLine {
-        +uint256 limit
-        +uint256 borrowed
-        +uint256 lastActivity
-    }
-    
-    ArcCreditTerminal --> CreditLine
-    ArcCreditTerminal --> AntiSniperHook
-```
-
-## Yellow State Channel Flow
-
-```mermaid
-sequenceDiagram
-    participant Trader
-    participant ClearNode as Yellow ClearNode
-    participant Agent as Margin Agent
-    
-    Trader->>ClearNode: createAppSessionMessage()
-    ClearNode-->>Trader: Session opened
-    
-    Note over Trader,ClearNode: Off-chain state channel<br/>Trader: 1,000 USDC<br/>Agent Allowance: 1,000 USDC
-    
-    Agent->>ClearNode: Monitor margin
-    ClearNode-->>Agent: Margin low (200 USDC)
-    
-    Agent->>ClearNode: offChainTransfer(800)
-    ClearNode-->>Trader: +800 USDC (instant)
-    
-    Note over Trader,ClearNode: Updated state<br/>Trader: 1,800 USDC<br/>Agent Allowance: 200 USDC
-    
-    Trader->>ClearNode: settleOnChain()
-    ClearNode-->>Trader: Final balances on Arc
-```
-
-## Circle CCTP Bridge Flow
-
-```mermaid
-sequenceDiagram
-    participant User
-    participant Sepolia as Ethereum Sepolia
-    participant Circle as Circle Attestation
-    participant Arc as Arc Testnet
-    
-    User->>Sepolia: approve(TokenMessenger, amount)
-    User->>Sepolia: depositForBurn(amount, domain=10, recipient)
-    Sepolia-->>Circle: MessageSent event
-    
-    loop Poll for attestation
-        User->>Circle: GET /attestations/{hash}
-        Circle-->>User: status: pending
-    end
-    
-    Circle-->>User: status: complete, attestation: 0x...
-    
-    User->>Arc: receiveMessage(message, attestation)
-    Arc-->>User: USDC minted on Arc
-```
-
-## Component Integration
-
-```mermaid
-graph LR
-    subgraph "Arc Credit Terminal"
-        A[deposit]
-        B[borrow]
-        C[agentTopUp]
-        D[settleCredit]
-        E[receiveCCTP]
-    end
-    
-    subgraph "Yellow Integration"
-        F[createSession]
-        G[offChainTransfer]
-        H[settleOnChain]
-    end
-    
-    subgraph "Uniswap v4 Hook"
-        I[commit]
-        J[reveal]
-        K[beforeSwap]
-        L[afterSwap]
-    end
-    
-    subgraph "Circle CCTP"
-        M[depositForBurn]
-        N[fetchAttestation]
-        O[receiveMessage]
-    end
-    
-    A --> F
-    C --> G
-    G --> H
-    H --> E
-    E --> I
-    I --> J
-    J --> K
-    K --> L
-    D --> M
-    M --> N
-    N --> O
-    O --> E
+    DEP --> ACT
+    CCTP --> CCTP_S
+    CCTP --> CCTP_A
+    YC --> WS
+    MEV --> HOOK
+    MEV --> PST
+    HOOK --> PM
 ```
 
 ## Deployed Contracts
 
-| Contract | Network | Address | Tx Hash |
-|----------|---------|---------|---------|
-| **ArcCreditTerminal** | Arc Testnet | `0xd1835d13A9694F0E9329FfDE9b18936CE872aae5` | `0xf30bfc37a23013a8f68d2b5375f5f5b19ddc5934b889923d91ba91462b61970f` |
+| Contract | Network | Address | Explorer |
+|----------|---------|---------|----------|
+| **ArcCreditTerminal** | Arc Testnet | `0xd1835d13A9694F0E9329FfDE9b18936CE872aae5` | [View](https://testnet.arcscan.app/tx/0xf30bfc37a23013a8f68d2b5375f5f5b19ddc5934b889923d91ba91462b61970f) |
+| **AntiSniperHook** | Eth Sepolia | `0x0A3b821941789AC5Ff334AB6C374bb23C98540c0` | [View](https://sepolia.etherscan.io/tx/0x3f495bb7d3b34ae58d1165bd1941083455afa28e89313463e13a10479247cebd) |
+| ETH/USDC Pool (v4) | Eth Sepolia | Pool ID `0x825ea1...63e5` | [View](https://sepolia.etherscan.io/tx/0x77e97d786e38e1665c5cce44a8c3b24daffe953069d4497042f36ce1e4c182a3) |
+| PoolManager (v4) | Eth Sepolia | `0xE03A1074c86CFeDd5C142C4F04F1a1536e203543` | Uniswap |
+| PoolSwapTest (v4) | Eth Sepolia | `0x9B6b46e2c869aa39918Db7f52f5557FE577B6eEe` | Uniswap |
 | USDC | Arc Testnet | `0x3600000000000000000000000000000000000000` | Native |
-| TokenMessenger | Arc Testnet | `0xb43db544E2c27092c107639Ad201b3dEfAbcF192` | Circle |
-| MessageTransmitter | Arc Testnet | `0x8FE6B999Dc680CcFDD5Bf7EB0974218be2542DAA` | Circle |
+| TokenMessengerV2 | Eth Sepolia | `0x8FE6B999Dc680CcFDD5Bf7EB0974218be2542DAA` | Circle |
+| TokenMessengerV2 | Arc Testnet | `0xb43db544E2c27092c107639Ad201b3dEfAbcF192` | Circle |
+| MessageTransmitterV2 | Arc Testnet | `0xE737e5cEBEEBa77EFE34D4aa090756590b1CE275` | Circle |
 
 ## Project Structure
 
 ```
 HackMoney2026/
+├── frontend/                          # The entire running application
+│   ├── app/
+│   │   ├── layout.tsx                 # Root layout + Providers
+│   │   ├── page.tsx                   # Landing page + tab navigation
+│   │   ├── globals.css                # Tailwind + custom theme
+│   │   └── api/agent/route.ts         # AI Risk Agent (OpenRouter LLM)
+│   ├── components/
+│   │   ├── CreditDashboard.tsx        # Arc credit info + AI agent + Yellow metering
+│   │   ├── MarginTopUp.tsx            # Deposit USDC → credit line (Arc)
+│   │   ├── BorrowRepay.tsx            # Borrow / repay on Arc
+│   │   ├── CCTPBridge.tsx             # Full CCTP v2 bridge (Sepolia → Arc)
+│   │   ├── YellowChannel.tsx          # Yellow ClearNode: auth, sessions, metering
+│   │   ├── AntiSniperSwap.tsx         # Uniswap v4 commit-reveal-swap
+│   │   ├── ConnectWallet.tsx          # Reown AppKit wallet connection
+│   │   ├── NetworkStatus.tsx          # Multi-chain status indicator
+│   │   └── ChainFlow.tsx             # Visual cross-chain diagram
+│   ├── lib/
+│   │   ├── contracts.ts               # All ABIs, addresses, chain definitions
+│   │   ├── wagmi-config.ts            # Wagmi adapter + networks
+│   │   └── providers.tsx              # AppKit + WagmiProvider + QueryProvider
+│   └── package.json
+│
 ├── contracts/
 │   ├── arc-credit/
-│   │   ├── src/
-│   │   │   └── ArcCreditTerminal.sol      # Core credit line logic
-│   │   ├── script/
-│   │   │   └── Deploy.s.sol               # Deployment script
-│   │   └── foundry.toml                   # Foundry config
-│   │
+│   │   ├── src/ArcCreditTerminal.sol  # Revolving credit (OpenZeppelin)
+│   │   └── script/Deploy.s.sol
 │   └── uniswap-hook/
-│       ├── src/
-│       │   └── AntiSniperHook.sol         # MEV protection hook
+│       ├── src/AntiSniperHook.sol     # v4 hook: commit-reveal MEV protection
 │       └── script/
-│           └── DeployHook.s.sol           # Hook deployment
+│           ├── DeployHook.s.sol       # CREATE2 salt-mined deployment
+│           └── CreatePool.s.sol       # Pool init with hook attached
 │
-├── backend/
-│   ├── marginMonitor.js                   # Yellow SDK integration
-│   ├── cctpBridge.js                      # Circle CCTP bridge
-│   └── package.json
+├── backend/                           # Reference scripts (not used by frontend)
+│   ├── marginMonitor.js               # Standalone agent example
+│   └── cctpBridge.js                  # Standalone CCTP example
 │
-├── frontend/
-│   ├── app/                               # Next.js app router
-│   ├── components/
-│   │   ├── CreditDashboard.tsx            # Credit line UI
-│   │   ├── MarginTopUp.tsx                # Top-up interface
-│   │   └── ConnectWallet.tsx              # Wallet connection
-│   └── package.json
-│
+├── ARCHITECTURE.md
 └── README.md
 ```
 
-## Quick Start (Judges & Demo)
-
-### Frontend Only (Recommended for Testing)
+## Quick Start
 
 ```bash
-# 1. Clone repository
 git clone https://github.com/N-45div/HackMoney2026.git
 cd HackMoney2026/frontend
-
-# 2. Install dependencies
 npm install
-
-# 3. Start development server
 npm run dev
-
-# 4. Open http://localhost:3000 and connect your wallet
-# - Arc Testnet: Get USDC from faucet
-# - Sepolia: Get test ETH + USDC from faucets
+# Open http://localhost:3000
 ```
 
-### Required Setup
+### Environment Variables
 
-1. **Add Networks to MetaMask:**
-   - **Arc Testnet**: Chain ID `5042002`, RPC `https://rpc.testnet.arc.network`
-   - **Ethereum Sepolia**: Chain ID `11155111` (auto-configured by MetaMask)
-
-2. **Get Test Tokens:**
-   - Arc USDC: [Arc Testnet Faucet](https://testnet.arcscan.app/faucet)
-   - Sepolia ETH: [Sepolia Faucet](https://sepoliafaucet.com/)
-   - Sepolia USDC: Use contract `0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238`
-
-### What You Can Test
-
-| Tab | Feature | Networks |
-|-----|---------|----------|
-| **Deposit** | Deposit USDC → Get credit line | Arc Testnet |
-| **Borrow/Repay** | Borrow against deposit, repay debt | Arc Testnet |
-| **CCTP Bridge** | Bridge USDC Sepolia → Arc | Sepolia + Arc |
-| **Yellow Channel** | Off-chain instant transfers | Any (WebSocket) |
-| **MEV Shield** | Commit-reveal anti-frontrunning | Sepolia |
-
-## Environment Variables
+Create `frontend/.env.local`:
 
 ```bash
 # Required
-PRIVATE_KEY=0x...                    # Agent wallet private key
-ARC_RPC_URL=https://rpc.testnet.arc.network
+NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID=your_walletconnect_project_id
 
-# Optional
-SEPOLIA_RPC_URL=https://rpc.sepolia.org
-YELLOW_WS_URL=wss://clearnet-sandbox.yellow.com/ws
+# Optional (AI agent uses rule-based fallback if missing)
+OPENROUTER_API_KEY=your_openrouter_key
 ```
+
+### Wallet Setup
+
+1. **Add Arc Testnet to MetaMask**: Chain ID `5042002`, RPC `https://rpc.testnet.arc.network`
+2. **Ethereum Sepolia**: Auto-configured by wallet providers
+
+### Get Test Tokens
+
+- **Sepolia USDC**: [faucet.circle.com](https://faucet.circle.com/)
+- **Sepolia ETH**: [sepoliafaucet.com](https://sepoliafaucet.com/)
+- **Arc USDC**: Bridge Sepolia USDC → Arc via the CCTP Bridge tab
+
+## Features
+
+| Tab | What It Does | Chain | Key Code |
+|-----|-------------|-------|----------|
+| **Dashboard** | Live credit info + AI Risk Agent analysis + Yellow metering receipts | Arc Testnet | `CreditDashboard.tsx` |
+| **Deposit** | Deposit USDC → open revolving credit line (150% collateral ratio) | Arc Testnet | `MarginTopUp.tsx` |
+| **Borrow / Repay** | Borrow against credit line or repay debt | Arc Testnet | `BorrowRepay.tsx` |
+| **CCTP Bridge** | Full CCTP v2 flow: approve → burn → poll attestation → mint | Sepolia → Arc | `CCTPBridge.tsx` |
+| **Yellow Channel** | WebSocket auth → EIP-712 challenge → session → metering intents | Yellow Sandbox | `YellowChannel.tsx` |
+| **MEV Shield** | Commit hash → reveal → swap via PoolSwapTest + AntiSniperHook | Eth Sepolia | `AntiSniperSwap.tsx` |
+
+## Tech Stack
+
+| Layer | Technology |
+|-------|-----------|
+| **Framework** | Next.js 16 (App Router, Turbopack) |
+| **Wallet** | Reown AppKit + wagmi v3 + viem v2 |
+| **Styling** | Tailwind CSS v4 + Framer Motion |
+| **State Channels** | `@erc7824/nitrolite` v0.5.3 (Yellow Network) |
+| **Smart Contracts** | Solidity 0.8.26, Foundry, OpenZeppelin Contracts |
+| **Uniswap** | v4-core, v4-periphery (BaseHook, HookMiner) |
+| **Bridge** | Circle CCTP v2 (TokenMessengerV2 / MessageTransmitterV2) |
+| **AI Agent** | OpenRouter → `nvidia/nemotron-nano-9b-v2:free` |
+| **Deployment** | Vercel (frontend), Foundry (contracts) |
+
+## Security
+
+- **ReentrancyGuard** on all ArcCreditTerminal external functions (OpenZeppelin)
+- **Agent authorization** — only whitelisted addresses can call `agentTopUp()`
+- **Commit-reveal** — swap amounts hidden until execution block
+- **EIP-712 signatures** — Yellow auth and state channel messages
+- **CCTP attestation** — Circle validates every cross-chain USDC transfer
 
 ## Network Configuration
 
-| Network | Chain ID | RPC URL | Explorer |
-|---------|----------|---------|----------|
-| Arc Testnet | 5042002 | `https://rpc.testnet.arc.network` | [Explorer](https://explorer.testnet.arc.network) |
-| Sepolia | 11155111 | `https://rpc.sepolia.org` | [Etherscan](https://sepolia.etherscan.io) |
-| Yellow Sandbox | - | `wss://clearnet-sandbox.yellow.com/ws` | - |
-
-## Technical Specifications
-
-- **Settlement Time**: < 100ms (Yellow state channel) / 30-60s (CCTP bridge)
-- **Gas Cost**: $0 for off-chain transfers / ~$0.04 for on-chain settlement
-- **Supported Assets**: USDC (native via Circle CCTP)
-- **Credit Limit**: Configurable per user (default: 100% of deposit)
-- **Collateral Ratio**: 100% (fully collateralized credit line)
-
-## Security Considerations
-
-1. **State Channel Security**: All off-chain states are cryptographically signed
-2. **CCTP Attestation**: Circle validates every cross-chain message
-3. **Commit-Reveal**: Order details hidden until execution
-4. **Agent Authorization**: Only whitelisted agents can trigger top-ups
-5. **Reentrancy Protection**: All contracts use OpenZeppelin's ReentrancyGuard
+| Network | Chain ID | RPC | Explorer |
+|---------|----------|-----|----------|
+| Arc Testnet | 5042002 | `https://rpc.testnet.arc.network` | [arcscan.app](https://testnet.arcscan.app) |
+| Ethereum Sepolia | 11155111 | Public | [sepolia.etherscan.io](https://sepolia.etherscan.io) |
+| Yellow Sandbox | — | `wss://clearnet-sandbox.yellow.com/ws` | — |
 
 ---
 
