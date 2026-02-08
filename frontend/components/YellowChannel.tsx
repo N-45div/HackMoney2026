@@ -60,12 +60,6 @@ export default function YellowChannel({ address }: YellowChannelProps) {
   const [eventPrice, setEventPrice] = useState('0.01')
   const [storedReceipts, setStoredReceipts] = useState<any[]>([])
 
-  const getOffchainBalance = useCallback((asset: string) => {
-    const found = ledgerBalances.find(b => b.asset === asset)
-    const n = found ? Number(found.amount) : 0
-    return Number.isFinite(n) ? n : 0
-  }, [ledgerBalances])
-
   const receiptsStorageKey = useCallback(() => {
     return `nitrobridge:meter_events:${address.toLowerCase()}`
   }, [address])
@@ -579,57 +573,6 @@ export default function YellowChannel({ address }: YellowChannelProps) {
                   </span>
                 )}
               </p>
-            </div>
-
-            {/* Counterparty */}
-            <div>
-              <label className="block text-sm text-slate-400 mb-2">Counterparty Address (optional)</label>
-              <input
-                type="text"
-                value={counterparty}
-                onChange={(e) => setCounterparty(e.target.value)}
-                placeholder={`${address.slice(0, 10)}... (self)`}
-                className="input-field text-sm"
-              />
-            </div>
-
-            {/* Amount */}
-            <div>
-              <label className="block text-sm text-slate-400 mb-2">Channel Amount (ytest.usd)</label>
-              <div className="relative">
-                <input
-                  type="number"
-                  value={transferAmount}
-                  onChange={(e) => setTransferAmount(e.target.value)}
-                  placeholder="100"
-                  className="input-field text-xl font-semibold pr-20"
-                />
-                <div className="absolute right-4 top-1/2 -translate-y-1/2">
-                  <span className="text-sm text-slate-500 font-medium">ytest.usd</span>
-                </div>
-              </div>
-            </div>
-
-            {/* Off-chain balances */}
-            <div className="p-3.5 rounded-xl bg-white/[0.03] border border-white/[0.06]">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-medium text-slate-400">Off-chain Balances (ClearNode ledger)</span>
-                <span className="text-[10px] text-slate-500">Updates after auth</span>
-              </div>
-              <div className="mt-2 text-xs text-slate-300">
-                {ledgerBalances.length > 0 ? (
-                  <div className="space-y-1">
-                    {ledgerBalances.map((b) => (
-                      <div key={b.asset} className="flex items-center justify-between">
-                        <span className="text-slate-400">{b.asset}</span>
-                        <span className="font-mono">{b.amount}</span>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <span className="text-slate-500">No balances reported yet</span>
-                )}
-              </div>
             </div>
 
             {/* Actions */}
