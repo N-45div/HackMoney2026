@@ -12,7 +12,7 @@ const queryClient = new QueryClient()
 createAppKit({
   adapters: [wagmiAdapter],
   projectId,
-  networks: networks as [AppKitNetwork, ...AppKitNetwork[]],
+  networks: networks as unknown as [AppKitNetwork, ...AppKitNetwork[]],
   metadata,
   features: {
     analytics: true,
