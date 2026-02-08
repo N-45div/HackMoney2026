@@ -10,10 +10,11 @@
   },
   "dependencies": {
     "@coinbase/wallet-sdk": "^4.3.7",
-    "@solana/kit": "^5.1.0",
-    "@tanstack/react-query": "^5.90.20",
+    "@erc7824/nitrolite": "^0.5.3",
     "@reown/appkit": "^1.8.17",
     "@reown/appkit-adapter-wagmi": "^1.8.17",
+    "@solana/kit": "^5.1.0",
+    "@tanstack/react-query": "^5.90.20",
     "axios": "^1.7.2",
     "framer-motion": "^12.33.0",
     "lucide-react": "^0.563.0",
@@ -21,12 +22,12 @@
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
     "typescript": "^5.9.3",
-    "@erc7824/nitrolite": "^0.5.3",
     "viem": "^2.45.1",
     "wagmi": "^3.4.2"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.1.10",
+    "@types/react": "^19.2.13",
     "tailwindcss": "^4.1.10"
   }
 }
